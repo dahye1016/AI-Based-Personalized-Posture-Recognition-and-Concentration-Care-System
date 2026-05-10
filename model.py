@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 
 # 1. 데이터 로드 (컬럼명이 없으므로 header=None 설정)
-df = pd.read_csv('C:/Users/jungd/OneDrive/바탕 화면/ConfLongDemo_JSI.csv', header=None)
+df = pd.read_csv('ConfLongDemo_JSI.csv', header=None)
 
 # 2. 6개 센서값 데이터만 추출 (4, 5, 6번 열이 수치 데이터입니다)
 # 연습을 위해 숫자 데이터를 복사해서 6개 컬럼으로 만듭니다.
