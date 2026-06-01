@@ -1,17 +1,12 @@
 # mlkit_pose
 
-A new Flutter project.
+ML Kit을 활용한 실시간 관절 인식 Flutter 앱
 
-## Getting Started
+## 기능
+- 카메라로 사람 관절 17개 실시간 인식
+- 관절 연결선 시각화
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 실행 방법
+1. Flutter SDK 설치
+2. `flutter pub get`
+3. `flutter run`
