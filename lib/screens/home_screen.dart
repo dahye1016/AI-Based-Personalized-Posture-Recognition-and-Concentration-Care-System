@@ -4,7 +4,8 @@ import 'package:flutter/services.dart';
 import '../config.dart';
 import '../models/posture.dart';
 import '../services/api_service.dart';
-import '../services/ble_service.dart';
+import '../widgets/seat_heatmap.dart';
+import 'calibration_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.api});
@@ -20,21 +21,25 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _error;
   String? _lastAlertedPosture;
 
-  final BleService _ble = BleService();
-  bool _bleConnected = false;
-  bool _bleConnecting = false;
+  SensorLayout? _layout;
+  HeatmapFrame? _heatmap;
+  Timer? _heatTimer;
+  bool _calibrated = false;
 
   @override
   void initState() {
     super.initState();
     _poll();
     _timer = Timer.periodic(AppConfig.pollInterval, (_) => _poll());
+    _heatTimer =
+        Timer.periodic(AppConfig.heatmapInterval, (_) => _pollHeatmap());
+    _loadLayout();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _ble.disconnect();
+    _heatTimer?.cancel();
     super.dispose();
   }
 
@@ -53,27 +58,32 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _toggleBle() async {
-    print('버튼 눌림!');
-    if (_bleConnected) {
-      await _ble.disconnect();
-      setState(() => _bleConnected = false);
-    } else {
-      setState(() => _bleConnecting = true);
-      final ok = await _ble.connect();
+  /// 센서 물리 배치를 한 번만 받아옵니다 (히트맵 그리기용)
+  Future<void> _loadLayout() async {
+    try {
+      final layout = await widget.api.fetchLayout();
+      final calib = await widget.api.fetchCalibration();
+      if (!mounted) return;
       setState(() {
-        _bleConnected = ok;
-        _bleConnecting = false;
+        _layout = layout;
+        _calibrated = calib.complete;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(ok ? '✅ ESP32 연결됨!' : '❌ 연결 실패. 다시 시도해주세요.'),
-            backgroundColor: ok ? Colors.green : Colors.red,
-          ),
-        );
-      }
-    }
+    } catch (_) {/* 서버가 아직 안 떴을 수 있음 — 폴링이 알아서 재시도 */}
+  }
+
+  Future<void> _pollHeatmap() async {
+    if (_layout == null) return;
+    try {
+      final h = await widget.api.fetchHeatmap();
+      if (mounted) setState(() => _heatmap = h);
+    } catch (_) {/* 조용히 무시 */}
+  }
+
+  Future<void> _openCalibration() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CalibrationScreen(api: widget.api),
+    ));
+    _loadLayout();
   }
 
   void _maybeAlert(CurrentPosture data) {
@@ -104,23 +114,14 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('실시간 자세'),
         actions: [
-          if (_bleConnecting)
-            const Padding(
-              padding: EdgeInsets.all(14),
-              child: SizedBox(
-                width: 20, height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          else
-            IconButton(
-              icon: Icon(
-                Icons.bluetooth,
-                color: _bleConnected ? Colors.blue : Colors.grey,
-              ),
-              tooltip: _bleConnected ? 'BLE 연결됨 (탭해서 해제)' : 'ESP32 연결',
-              onPressed: _toggleBle,
+          IconButton(
+            icon: Icon(
+              Icons.tune,
+              color: _calibrated ? const Color(0xFF2E9E6B) : Colors.orange,
             ),
+            tooltip: _calibrated ? '자세 재보정' : '자세 등록이 필요해요',
+            onPressed: _openCalibration,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '새로고침',
@@ -134,23 +135,37 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.all(24),
           children: [
             const SizedBox(height: 12),
-            if (_bleConnected)
-              Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.bluetooth_connected, color: Colors.blue),
-                    SizedBox(width: 10),
-                    Text('ESP32 센서 연결됨 - 데이터 수신 중'),
-                  ],
+            if (!_calibrated)
+              InkWell(
+                onTap: _openCalibration,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.withOpacity(0.5)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.tune, color: Colors.orange),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text('자세를 등록하면 훨씬 정확해져요. 탭해서 등록하기'),
+                      ),
+                      Icon(Icons.chevron_right, color: Colors.orange),
+                    ],
+                  ),
                 ),
               ),
+            if (_layout != null) ...[
+              SeatHeatmap(
+                layout: _layout!,
+                channels: _heatmap?.channels ?? const [],
+                cof: _data == null ? null : Offset(_data!.cofX, _data!.cofY),
+              ),
+              const SizedBox(height: 20),
+            ],
             if (_error != null) _ErrorBanner(message: _error!),
             _PostureCard(data: _data),
             const SizedBox(height: 24),

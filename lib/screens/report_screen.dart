@@ -3,7 +3,7 @@ import '../models/posture.dart';
 import '../services/api_service.dart';
 
 /// 집중력 트렌드 리포트 화면.
-/// /sensor-data(최근 100건)를 분석해
+/// 서버 /report/daily 집계를 받아
 /// - 집중도 점수(바른자세 비율)
 /// - 자세 분포
 /// - 시간대별 집중도 추이(꺾은선)
@@ -17,15 +17,15 @@ class ReportScreen extends StatefulWidget {
 }
 
 class _ReportScreenState extends State<ReportScreen> {
-  late Future<List<SensorRecord>> _future;
+  late Future<DailyReport> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.api.fetchHistory();
+    _future = widget.api.fetchDailyReport();
   }
 
-  void _reload() => setState(() => _future = widget.api.fetchHistory());
+  void _reload() => setState(() => _future = widget.api.fetchDailyReport());
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +40,7 @@ class _ReportScreenState extends State<ReportScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<List<SensorRecord>>(
+      body: FutureBuilder<DailyReport>(
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
@@ -53,17 +53,18 @@ class _ReportScreenState extends State<ReportScreen> {
               onRetry: _reload,
             );
           }
-          final records = snap.data ?? [];
-          if (records.isEmpty) {
+          final report = snap.data;
+          if (report == null || report.distribution.isEmpty) {
             return _Message(
               icon: Icons.inbox,
-              text: '아직 수집된 자세 데이터가 없어요.',
+              text: '아직 수집된 자세 데이터가 없어요.\n'
+                  'PC에서 bridge/main.py 가 돌고 있는지 확인해주세요.',
               onRetry: _reload,
             );
           }
           return RefreshIndicator(
             onRefresh: () async => _reload(),
-            child: _ReportBody(records: records),
+            child: _ReportBody(report: report),
           );
         },
       ),
@@ -72,61 +73,57 @@ class _ReportScreenState extends State<ReportScreen> {
 }
 
 class _ReportBody extends StatelessWidget {
-  const _ReportBody({required this.records});
-  final List<SensorRecord> records;
+  const _ReportBody({required this.report});
+  final DailyReport report;
 
   @override
   Widget build(BuildContext context) {
-    final total = records.length;
-
-    // 자세별 카운트
-    final counts = <String, int>{};
-    for (final r in records) {
-      counts[r.posture] = (counts[r.posture] ?? 0) + 1;
-    }
-    final goodCount = counts['바른자세'] ?? 0;
-    final focusScore = total == 0 ? 0 : (goodCount * 100 / total).round();
-
-    // 서버는 시간 역순(최신 먼저) → 오래된 순으로 뒤집어 추이 계산
-    final chrono = records.reversed.toList();
-    final trend = _focusTrend(chrono, buckets: 10);
+    // 시간대별 '정자세 비율'을 그대로 추이 그래프로 씁니다.
+    // (집계는 서버가 이미 해줬으므로 앱은 그리기만 합니다)
+    final trend = report.hourly.map((h) => h.goodRatio).toList();
 
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        _ScoreCard(score: focusScore, sampleCount: total),
+        _ScoreCard(
+          score: report.goodRatio.round(),
+          sampleCount: report.seatedSeconds ~/ 60,
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: Text('오늘 착석 ${report.seatedLabel}',
+              style: TextStyle(color: Colors.grey.shade600)),
+        ),
         const SizedBox(height: 24),
-        const _SectionTitle('집중도 추이'),
+        const _SectionTitle('시간대별 집중도'),
         const SizedBox(height: 12),
         _TrendChart(values: trend),
+        if (report.hourly.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('${report.hourly.first.hour}시',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+              Text('${report.hourly.last.hour}시',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+            ],
+          ),
+        ],
         const SizedBox(height: 28),
         const _SectionTitle('자세 분포'),
         const SizedBox(height: 12),
-        ..._distributionBars(counts, total),
+        ..._distributionBars(report.distribution),
       ],
     );
   }
 
-  /// 구간별 바른자세 비율(0~100)
-  List<double> _focusTrend(List<SensorRecord> chrono, {required int buckets}) {
-    if (chrono.isEmpty) return [];
-    final n = chrono.length;
-    final size = (n / buckets).ceil().clamp(1, n);
-    final result = <double>[];
-    for (var i = 0; i < n; i += size) {
-      final slice = chrono.sublist(i, (i + size).clamp(0, n));
-      final good = slice.where((r) => r.posture == '바른자세').length;
-      result.add(good * 100 / slice.length);
-    }
-    return result;
-  }
-
-  List<Widget> _distributionBars(Map<String, int> counts, int total) {
-    final entries = counts.entries.toList()
+  List<Widget> _distributionBars(Map<String, double> dist) {
+    final entries = dist.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     return entries.map((e) {
       final style = PostureStyle.of(e.key);
-      final ratio = total == 0 ? 0.0 : e.value / total;
+      final ratio = (e.value / 100).clamp(0.0, 1.0);
       return Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: Column(
@@ -136,9 +133,11 @@ class _ReportBody extends StatelessWidget {
               children: [
                 Icon(style.icon, size: 18, color: style.color),
                 const SizedBox(width: 8),
-                Text(e.key, style: const TextStyle(fontWeight: FontWeight.w600)),
-                const Spacer(),
-                Text('${(ratio * 100).round()}%  (${e.value})',
+                Expanded(
+                  child: Text(e.key,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                ),
+                Text('${e.value.toStringAsFixed(1)}%',
                     style: TextStyle(color: Colors.grey.shade700)),
               ],
             ),
@@ -197,7 +196,7 @@ class _ScoreCard extends StatelessWidget {
               style: TextStyle(
                   fontSize: 18, fontWeight: FontWeight.w600, color: _color)),
           const SizedBox(height: 6),
-          Text('최근 $sampleCount건 기준 · 바른자세 비율',
+          Text('오늘 착석 $sampleCount분 기준 · 정자세 비율',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
         ],
       ),
