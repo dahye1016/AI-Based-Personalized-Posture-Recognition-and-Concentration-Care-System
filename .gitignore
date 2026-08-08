@@ -42,6 +42,7 @@ app.*.map.json
 __pycache__/
 *.py[cod]
 *.db
+*.bak-*
 .venv/
 venv/
 
