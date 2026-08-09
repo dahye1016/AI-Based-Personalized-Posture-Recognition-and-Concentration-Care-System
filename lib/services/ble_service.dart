@@ -22,8 +22,8 @@ class BleService {
   static const String _deviceName = 'Cushion-MDEX';
   static const String _service16 = '180a';
   static const String _char16 = '2a98';
-  static final Guid _serviceGuid =
-      Guid('0000180A-0000-1000-8000-00805F9B34FB');
+  // NOTE: 진단을 위해 스캔 필터(withServices)를 제거함 → Service Guid 상수도 잠시 미사용.
+  //       원인 확인 후 필터를 다시 켤 때 Guid('0000180A-…') 를 복구한다.
 
   static const int _payloadLen = 66; // frame_no(2) + 32ch * 2
   static const int _minMtu = 69; // 66 + ATT 헤더 3
@@ -55,19 +55,35 @@ class BleService {
   Future<bool> connect() async {
     try {
       _manualDisconnect = false;
+      debugPrint('[BLE] connect() 시작');
 
       if (!kIsWeb && Platform.isAndroid) {
+        debugPrint('[BLE] Android 권한 요청');
         await [
           Permission.bluetoothScan,
           Permission.bluetoothConnect,
           Permission.locationWhenInUse,
         ].request();
+      } else {
+        debugPrint('[BLE] iOS/기타 — 권한은 Info.plist 기반(첫 사용 시 시스템 팝업)');
       }
 
-      if (await FlutterBluePlus.isSupported == false) return false;
-      await FlutterBluePlus.adapterState
-          .where((s) => s == BluetoothAdapterState.on)
-          .first;
+      final supported = await FlutterBluePlus.isSupported;
+      debugPrint('[BLE] isSupported=$supported');
+      if (!supported) {
+        debugPrint('[BLE] 이 기기는 BLE 미지원 — 중단');
+        return false;
+      }
+
+      debugPrint('[BLE] 어댑터 상태=${FlutterBluePlus.adapterStateNow}');
+      if (FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) {
+        debugPrint('[BLE] 어댑터 ON 대기…');
+        await FlutterBluePlus.adapterState
+            .where((s) => s == BluetoothAdapterState.on)
+            .first
+            .timeout(const Duration(seconds: 5));
+      }
+      debugPrint('[BLE] 어댑터 ON');
 
       _reconnectDelayMs = _baseReconnectMs; // 새 연결 시 backoff 초기화
       return await _scanAndConnect();
@@ -102,20 +118,30 @@ class BleService {
   Future<bool> _scanAndConnect() async {
     final completer = Completer<bool>();
     bool connecting = false; // 중복 연결 방지
+    final seen = <String>{}; // 발견 로그 중복 방지 (remoteId 단위)
 
     await _scanSub?.cancel();
     _scanSub = FlutterBluePlus.onScanResults.listen((results) async {
       if (connecting || completer.isCompleted) return;
 
-      // 이름 AND Service UUID 둘 다 확인 (플랫폼별 편차 방어)
+      // [진단] 필터 없이 전체 스캔 → 이름 OR UUID 하나만 맞아도 매칭.
+      // iOS 는 로컬명/서비스UUID 를 광고에서 숨기는 경우가 있어 둘 다 요구하면
+      // 영영 못 찾는다. 발견 기기는 id 와 함께 로그로 남긴다(재연결용 식별).
       ScanResult? hit;
       for (final r in results) {
+        final id = r.device.remoteId.str; // iOS=기기별 고유 UUID / Android=MAC
         final advName = r.advertisementData.advName;
         final name = advName.isNotEmpty ? advName : r.device.platformName;
+        final uuids = r.advertisementData.serviceUuids;
+
+        if (seen.add(id)) {
+          debugPrint('[BLE] 발견 id=$id name="$name" '
+              'services=${uuids.map((g) => g.str).toList()} rssi=${r.rssi}');
+        }
+
         final nameOk = name == _deviceName;
-        final uuidOk = r.advertisementData.serviceUuids
-            .any((g) => _sameUuid(g, _service16));
-        if (nameOk && uuidOk) {
+        final uuidOk = uuids.any((g) => _sameUuid(g, _service16));
+        if (nameOk || uuidOk) {
           hit = r;
           break;
         }
@@ -123,19 +149,26 @@ class BleService {
       if (hit == null) return;
 
       connecting = true;
+      final hitName = hit.advertisementData.advName.isNotEmpty
+          ? hit.advertisementData.advName
+          : hit.device.platformName;
+      debugPrint('[BLE] 대상 매칭 id=${hit.device.remoteId.str} '
+          'name="$hitName" → 연결 시도');
       await FlutterBluePlus.stopScan();
       final ok = await _establish(hit.device);
       if (!completer.isCompleted) completer.complete(ok);
     });
 
-    await FlutterBluePlus.startScan(
-      withServices: [_serviceGuid],
-      timeout: const Duration(seconds: 10),
-    );
+    debugPrint('[BLE] 스캔 시작 (필터 없음 — 전체 스캔, 진단용)');
+    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
 
     // 스캔 타임아웃 안전망
     Future.delayed(const Duration(seconds: 15), () {
-      if (!completer.isCompleted) completer.complete(false);
+      if (!completer.isCompleted) {
+        debugPrint('[BLE] 스캔 타임아웃 — 대상 기기 못 찾음 '
+            '(위 발견 로그에서 우리 방석 id 를 확인하세요)');
+        completer.complete(false);
+      }
     });
 
     return completer.future;
@@ -152,13 +185,16 @@ class BleService {
           .where((s) => s == BluetoothConnectionState.connected)
           .first
           .timeout(const Duration(seconds: 10));
+      debugPrint('[BLE] 연결됨 (GATT connected)');
 
       _isConnected = true;
       _reconnectDelayMs = _baseReconnectMs; // 연결 성공 → backoff 리셋
 
       await _negotiateMtu(device);
       _listenConnectionState(device); // 자동 재연결 감시
-      return await _subscribe(device);
+      final ok = await _subscribe(device);
+      debugPrint(ok ? '[BLE] 준비 완료 — 프레임 수신 대기' : '[BLE] 구독 실패');
+      return ok;
     } catch (e) {
       debugPrint('[BLE] 연결 실패: $e');
       _isConnected = false;

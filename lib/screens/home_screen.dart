@@ -244,12 +244,16 @@ class _HomeScreenState extends State<HomeScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: const Text('채널 번호 표시 (방향 검증용)'),
-            value: _showIndex,
-            onChanged: (v) => setState(() => _showIndex = v),
+          // Material 로 감싸 ListTile 의 Material 조상 요구를 충족(경고 반복 제거).
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('채널 번호 표시 (방향 검증용)'),
+              value: _showIndex,
+              onChanged: (v) => setState(() => _showIndex = v),
+            ),
           ),
         ],
       ),

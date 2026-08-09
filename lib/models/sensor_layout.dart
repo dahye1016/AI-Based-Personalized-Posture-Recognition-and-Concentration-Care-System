@@ -1,18 +1,18 @@
 import 'dart:ui' show Offset;
 
-/// PoseLab Seat 방석센서 32채널 물리 배치 정의.
+/// PoseLab Seat 방석센서 32채널 물리 배치 (실측 확정판).
 ///
-/// ../poselab-review/bridge/layout.py 를 Dart 상수로 포팅한 것.
-/// 이 파일 하나만 바꾸면 히트맵/특징추출/자세판정 좌표가 전부 따라온다.
+/// 이전 버전은 layout.py 를 포팅해 방향을 "가정"하고 ORIENTATION_FLIP /
+/// MIRROR_LR 플래그로 뒤집는 구조였다. 실측이 끝나 가정·플래그를 제거하고
+/// 실측값을 직접 정의한다.
 ///
-/// ┌─────────────────────────────────────────────────────────┐
-/// │  ROW 2 (뒤/등쪽)   24 25 26 27 | 28 29 30 31   (4+4)     │
-/// │  ROW 1 (중간)   10 11 ... 16 | 17 ... 23        (7+7)    │
-/// │  ROW 0 (앞/무릎쪽)  0 1 2 3 4 | 5 6 7 8 9        (5+5)   │
-/// └─────────────────────────────────────────────────────────┘
+/// 좌표계 — 의자에 앉은 사람을 "위에서 내려다본" 그림:
+///   · y축: 0=화면 위=엉덩이(0~9), y 클수록 화면 아래=무릎(24~31)
+///          (표시상의 선택이며 판정 로직과 무관. 그룹 정의는 실측 그대로.)
+///   · x축: 0=화면 왼쪽=사람의 오른쪽 (마주 보는 게 아니라 위에서 보므로)
 ///
-/// ⚠️ 실물 방향은 아직 미검증. ROW0 이 앞인지, En1 커넥터가 왼쪽인지
-///    확인되면 [orientationFlip] / [mirrorLR] 두 값만 바꿔서 뒤집는다.
+/// 실측 확정 2026-08-09 — 실기기 BLE 수신 상태에서
+/// 채널 번호를 화면에 표시하고 각 부위를 직접 눌러 확인함
 class SensorLayout {
   SensorLayout._();
 
@@ -22,73 +22,77 @@ class SensorLayout {
   static const double widthMm = 386.0;
   static const double heightMm = 382.0;
 
-  // 실물 방향 미검증 — 확인 후 여기 두 값만 바꾸면 된다.
-  static const bool orientationFlip = false; // true 면 앞뒤(y) 반전
-  static const bool mirrorLR = false; // true 면 좌우(x) 반전
+  // ── 부위별 채널 그룹 ──────────────────────────────────────────────
+  // 실측 확정 2026-08-09 — 실기기 BLE 수신 상태에서
+  // 채널 번호를 화면에 표시하고 각 부위를 직접 눌러 확인함
+  //
+  // 각 행에서 번호 증가 = 몸 바깥(오른쪽) → 안쪽 → 반대편 바깥(왼쪽).
+  static const List<int> hipRight = [0, 1, 2, 3, 4]; // 오른쪽 엉덩이 (0=몸 바깥쪽)
+  static const List<int> hipLeft = [5, 6, 7, 8, 9]; // 왼쪽 엉덩이
+  static const List<int> thighRight = [10, 11, 12, 13, 14, 15, 16]; // 오른쪽 허벅지
+  static const List<int> thighLeft = [17, 18, 19, 20, 21, 22, 23]; // 왼쪽 허벅지
+  static const List<int> kneeRight = [24, 25, 26, 27]; // 오른쪽 무릎
+  static const List<int> kneeLeft = [28, 29, 30, 31]; // 왼쪽 무릎
 
-  /// 행별 (좌측 그룹, 우측 그룹) 채널 번호.
-  static const Map<int, (List<int>, List<int>)> rows = {
-    0: ([0, 1, 2, 3, 4], [5, 6, 7, 8, 9]), // 5 + 5
-    1: ([10, 11, 12, 13, 14, 15, 16], [17, 18, 19, 20, 21, 22, 23]), // 7 + 7
-    2: ([24, 25, 26, 27], [28, 29, 30, 31]), // 4 + 4
-  };
+  // 부위별 (좌우 합침)
+  static const List<int> hipCh = [...hipRight, ...hipLeft]; // 0~9
+  static const List<int> thighCh = [...thighRight, ...thighLeft]; // 10~23
+  static const List<int> kneeCh = [...kneeRight, ...kneeLeft]; // 24~31
 
-  /// 행의 세로 위치 (0 = 앞쪽 가장자리, heightMm = 뒤쪽 가장자리).
-  static const Map<int, double> rowYMm = {0: 40.0, 1: 191.0, 2: 342.0};
+  // 좌우별 (부위 합침) — 사람 기준
+  static const List<int> rightCh = [...hipRight, ...thighRight, ...kneeRight];
+  static const List<int> leftCh = [...hipLeft, ...thighLeft, ...kneeLeft];
 
-  /// 노드 1개가 대표하는 면적 (cm²) — 접촉 면적 계산용 근사값.
+  // 노드 1개가 대표하는 면적 (cm²) — 접촉 면적 계산용 근사값
   static const double nodeAreaCm2 =
       (widthMm / 10.0) * (heightMm / 10.0) / nChannels;
 
+  // 행의 세로 위치 (mm). 화면 위(엉덩이) → 아래(무릎).
+  static const double _hipY = 40.0; // 화면 위
+  static const double _thighY = 191.0; // 중간
+  static const double _kneeY = 342.0; // 화면 아래
+
   /// 채널 번호 -> (x_mm, y_mm) 좌표. index 가 채널 번호.
+  /// seat_heatmap 이 이 리스트를 그대로 소비한다.
   static final List<Offset> positions = _buildPositions();
 
   static List<Offset> _buildPositions() {
     final pos = List<Offset>.filled(nChannels, Offset.zero);
     const half = widthMm / 2.0;
-    const gap = 18.0; // 중앙 FPC 배선이 지나가는 빈 공간
+    const gap = 18.0; // 중앙 배선이 지나가는 빈 공간
     const margin = 12.0;
 
-    rows.forEach((row, groups) {
-      final y = rowYMm[row]!;
-      // 좌측 그룹은 x 12 ~ (중앙-gap), 우측 그룹은 (중앙+gap) ~ (width-12)
-      final specs = <(List<int>, double, double)>[
-        (groups.$1, margin, half - gap),
-        (groups.$2, half + gap, widthMm - margin),
-      ];
-      for (final (group, x0, x1) in specs) {
-        final n = group.length;
-        for (var i = 0; i < n; i++) {
-          final x = n == 1 ? x0 : x0 + (x1 - x0) * i / (n - 1);
-          pos[group[i]] = Offset(x, y);
-        }
+    // 사람의 오른쪽 그룹 → 화면 왼쪽 절반(x 작음), 왼쪽 그룹 → 오른쪽 절반.
+    // 그룹 내 index 증가 → x 증가 (몸 바깥→안쪽 방향과 일치).
+    void place(List<int> group, double x0, double x1, double y) {
+      final n = group.length;
+      for (var i = 0; i < n; i++) {
+        final x = n == 1 ? x0 : x0 + (x1 - x0) * i / (n - 1);
+        pos[group[i]] = Offset(x, y);
       }
-    });
-
-    var result = pos;
-    if (orientationFlip) {
-      result = [for (final p in result) Offset(p.dx, heightMm - p.dy)];
-    }
-    if (mirrorLR) {
-      result = [for (final p in result) Offset(widthMm - p.dx, p.dy)];
     }
 
-    // 플래그/배치를 나중에 손볼 때 실수를 잡아준다.
-    assert(result.length == nChannels,
-        '채널 배치 정의가 $nChannels개가 아닙니다: ${result.length}');
-    return result;
+    place(hipRight, margin, half - gap, _hipY); // 화면 좌상단
+    place(hipLeft, half + gap, widthMm - margin, _hipY); // 화면 우상단
+    place(thighRight, margin, half - gap, _thighY);
+    place(thighLeft, half + gap, widthMm - margin, _thighY);
+    place(kneeRight, margin, half - gap, _kneeY); // 화면 좌하단
+    place(kneeLeft, half + gap, widthMm - margin, _kneeY); // 화면 우하단
+
+    // 검증: 0~31 이 중복·누락 없이 정확히 한 번씩, 좌표 개수 32.
+    assert(_isComplete(), '채널 그룹에 중복/누락이 있습니다');
+    assert(pos.length == nChannels, '좌표 개수가 $nChannels 이 아닙니다');
+    return pos;
   }
 
-  // ── 자주 쓰는 그룹 인덱스 (특징 추출용) ────────────────────────────
-  static final List<int> frontCh = orientationFlip ? _rowAll(2) : _rowAll(0);
-  static final List<int> midCh = _rowAll(1);
-  static final List<int> backCh = orientationFlip ? _rowAll(0) : _rowAll(2);
-  static final List<int> leftCh = mirrorLR ? _rightGroups() : _leftGroups();
-  static final List<int> rightCh = mirrorLR ? _leftGroups() : _rightGroups();
-
-  static List<int> _rowAll(int r) => [...rows[r]!.$1, ...rows[r]!.$2];
-  static List<int> _leftGroups() =>
-      [for (final e in rows.entries) ...e.value.$1];
-  static List<int> _rightGroups() =>
-      [for (final e in rows.entries) ...e.value.$2];
+  /// 부위별·좌우별 두 분할 모두 0~31 을 정확히 한 번씩 덮는지 검증.
+  static bool _isComplete() {
+    final expected = List<int>.generate(nChannels, (i) => i).toSet();
+    bool covers(List<int> all) =>
+        all.length == nChannels &&
+        all.toSet().length == nChannels &&
+        all.toSet().containsAll(expected);
+    return covers([...hipCh, ...thighCh, ...kneeCh]) &&
+        covers([...rightCh, ...leftCh]);
+  }
 }
