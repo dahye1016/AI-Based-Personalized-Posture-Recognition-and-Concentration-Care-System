@@ -76,11 +76,12 @@ def send_data_verbose(posture: str):
         rs = res.get("region_summary", {})
         if rs:
             print(
-                f"  방석  앞L={rs['seat_front_left']:6.1f} 앞R={rs['seat_front_right']:6.1f} "
-                f"뒤L={rs['seat_rear_left']:6.1f} 뒤R={rs['seat_rear_right']:6.1f}"
+                f"  방석  우엉덩={rs['right_hip']:6.1f} 좌엉덩={rs['left_hip']:6.1f} "
+                f"우허벅={rs['right_mid']:6.1f} 좌허벅={rs['left_mid']:6.1f} "
+                f"우무릎={rs['right_knee']:6.1f} 좌무릎={rs['left_knee']:6.1f}"
             )
             print(
-                f"  등받이 상L={rs['back_upper_left']:6.1f} 상R={rs['back_upper_right']:6.1f} "
+                f"  등받이(임시격자) 상L={rs['back_upper_left']:6.1f} 상R={rs['back_upper_right']:6.1f} "
                 f"하L={rs['back_lower_left']:6.1f} 하R={rs['back_lower_right']:6.1f}"
             )
     except requests.exceptions.Timeout:
