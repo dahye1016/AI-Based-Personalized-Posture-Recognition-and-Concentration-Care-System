@@ -1,204 +1,158 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../config.dart';
-import '../models/posture.dart';
-import '../services/api_service.dart';
+import '../theme/app_theme.dart';
+import '../models/mock_data.dart';
+import '../services/sensor_source.dart';
+import '../services/posture_classifier.dart';
+import '../widgets/common.dart';
+import '../widgets/stat_tile.dart';
+import 'stretch_screen.dart';
 
-/// 실시간 자세 화면.
-/// - 주기적으로 /current-posture 폴링
-/// - 나쁜 자세가 새로 감지되면 진동 + 스낵바로 교정 알림
+/// 홈 — 실시간 자세.
+/// SensorSource(입구) → PostureClassifier(판정) → 화면.
+/// 지금은 MockSensorSource(가짜)로 돌아가고, BLE 확정 시 source 만 갈아끼우면 된다.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.api});
-  final ApiService api;
+  const HomeScreen({super.key, this.source});
+
+  /// 데이터 입구. 안 넘기면 가짜 소스로 자동 동작.
+  final SensorSource? source;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  Timer? _timer;
-  CurrentPosture? _data;
-  String? _error;
-  String? _lastAlertedPosture; // 같은 나쁜 자세 반복 알림 방지
+  late final SensorSource _source;
+  StreamSubscription<List<int>>? _sub;
+  PostureResult _result =
+      const PostureResult('연결 중', PostureStatus.good, '센서 데이터를 기다리는 중...');
+  String? _lastWarned;
 
   @override
   void initState() {
     super.initState();
-    _poll(); // 즉시 1회
-    _timer = Timer.periodic(AppConfig.pollInterval, (_) => _poll());
+    _source = widget.source ?? MockSensorSource();
+    _sub = _source.frames().listen((frame) {
+      final r = PostureClassifier.classify(frame);
+      if (!mounted) return;
+      setState(() => _result = r);
+      // 나쁜 자세가 새로 감지된 순간에만 진동 (REQ-F-05)
+      if (r.status == PostureStatus.warning) {
+        if (_lastWarned != r.posture) {
+          _lastWarned = r.posture;
+          HapticFeedback.mediumImpact();
+        }
+      } else {
+        _lastWarned = null;
+      }
+    });
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _sub?.cancel();
+    _source.dispose();
     super.dispose();
   }
 
-  Future<void> _poll() async {
-    try {
-      final data = await widget.api.fetchCurrentPosture();
-      if (!mounted) return;
-      setState(() {
-        _data = data;
-        _error = null;
-      });
-      _maybeAlert(data);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.toString());
-    }
-  }
-
-  /// 나쁜 자세가 "새로" 감지된 순간에만 진동 + 알림
-  void _maybeAlert(CurrentPosture data) {
-    if (data.isBad) {
-      if (_lastAlertedPosture != data.posture) {
-        _lastAlertedPosture = data.posture;
-        HapticFeedback.heavyImpact(); // 진동 알림
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-            ..clearSnackBars()
-            ..showSnackBar(
-              SnackBar(
-                content: Text(data.message),
-                backgroundColor: PostureStyle.of(data.posture).color,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-        }
-      }
-    } else {
-      _lastAlertedPosture = null; // 바른자세로 돌아오면 리셋
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final warning = _result.status == PostureStatus.warning;
+    final cardBg = warning ? AppColors.warnBg : AppColors.goodBg;
+    final cardFg = warning ? AppColors.warnText : AppColors.goodText;
+    final icon = warning ? Icons.warning_amber_rounded : Icons.check_circle;
+    final iconColor = warning ? AppColors.warnIcon : AppColors.postureGood;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('실시간 자세'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: '새로고침',
-            onPressed: _poll,
+        title: const Text('홈'),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: AppSpacing.screen),
+            child: Row(
+              children: [
+                Icon(Icons.check_box_outlined, size: 18, color: AppColors.primary),
+                SizedBox(width: 4),
+                Text('2/2',
+                    style: TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14)),
+              ],
+            ),
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _poll,
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            const SizedBox(height: 12),
-            if (_error != null) _ErrorBanner(message: _error!),
-            _PostureCard(data: _data),
-            const SizedBox(height: 24),
-            _StatusHint(data: _data),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 큰 자세 표시 카드
-class _PostureCard extends StatelessWidget {
-  const _PostureCard({required this.data});
-  final CurrentPosture? data;
-
-  @override
-  Widget build(BuildContext context) {
-    if (data == null) {
-      return const SizedBox(
-        height: 320,
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-    final style = PostureStyle.of(data!.posture);
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-      decoration: BoxDecoration(
-        color: style.color.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: style.color.withOpacity(0.4), width: 2),
-      ),
-      child: Column(
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.screen, 4, AppSpacing.screen, 28),
         children: [
-          Icon(style.icon, size: 96, color: style.color),
-          const SizedBox(height: 20),
-          Text(
-            data!.posture,
-            style: TextStyle(
-              fontSize: 34,
-              fontWeight: FontWeight.bold,
-              color: style.color,
+          // 현재 자세 카드 (실시간 판정 결과)
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: cardFg.withOpacity(0.25)),
             ),
+            child: Column(
+              children: [
+                Icon(icon, size: 60, color: iconColor),
+                const SizedBox(height: 16),
+                Text('현재 자세',
+                    style: AppText.body.copyWith(color: cardFg)),
+                const SizedBox(height: 10),
+                Text(
+                  _result.posture,
+                  style: TextStyle(
+                    fontSize: 46,
+                    fontWeight: FontWeight.w800,
+                    color: cardFg,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _result.message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: cardFg, fontSize: 14, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+
+          const SectionHeader('오늘'),
+          Row(
+            children: const [
+              Expanded(child: StatTile(value: MockData.sitTime, label: '착석')),
+              SizedBox(width: 12),
+              Expanded(
+                  child: StatTile(value: MockData.goodRatio, label: '바른자세')),
+              SizedBox(width: 12),
+              Expanded(
+                child: StatTile(
+                  value: MockData.alertCount,
+                  label: '알림',
+                  valueColor: AppColors.warnIcon,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
-          Text(
-            data!.message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16, height: 1.4),
-          ),
-          if (data!.action != null) ...[
-            const SizedBox(height: 16),
-            Chip(
-              avatar: Icon(Icons.vibration, size: 18, color: style.color),
-              label: Text(data!.action!),
-              backgroundColor: style.color.withOpacity(0.15),
+
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const StretchScreen()),
             ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusHint extends StatelessWidget {
-  const _StatusHint({required this.data});
-  final CurrentPosture? data;
-
-  @override
-  Widget build(BuildContext context) {
-    final ts = data?.timestamp;
-    final timeText = ts == null
-        ? '—'
-        : '${ts.hour.toString().padLeft(2, '0')}:'
-            '${ts.minute.toString().padLeft(2, '0')}:'
-            '${ts.second.toString().padLeft(2, '0')}';
-    return Center(
-      child: Text(
-        '마지막 갱신 $timeText · ${AppConfig.pollInterval.inSeconds}초마다 자동 확인',
-        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-      ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.red.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.shade200),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.wifi_off, color: Colors.red),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '서버에 연결할 수 없어요.\n$message',
-              style: const TextStyle(fontSize: 13),
+            child: const InfoBanner(
+              title: '스트레칭 시간',
+              text: '1시간 경과 · 눌러서 스트레칭 시작',
+              bg: AppColors.warnBg,
+              fg: AppColors.warnText,
+              icon: Icons.self_improvement,
             ),
           ),
         ],

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'services/api_service.dart';
+import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/report_screen.dart';
+import 'screens/challenge_screen.dart';
+import 'screens/profile_screen.dart';
 
 void main() => runApp(const PostureCareApp());
 
@@ -13,16 +15,13 @@ class PostureCareApp extends StatelessWidget {
     return MaterialApp(
       title: 'PostureCare',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
-        useMaterial3: true,
-      ),
+      theme: buildAppTheme(),
       home: const RootNav(),
     );
   }
 }
 
-/// 하단 탭: 실시간 자세 / 집중력 리포트
+/// 하단 탭: 홈 / 리포트 / 챌린지 / 내정보
 class RootNav extends StatefulWidget {
   const RootNav({super.key});
 
@@ -31,19 +30,14 @@ class RootNav extends StatefulWidget {
 }
 
 class _RootNavState extends State<RootNav> {
-  final ApiService _api = ApiService();
   int _index = 0;
 
-  late final List<Widget> _pages = [
-    HomeScreen(api: _api),
-    ReportScreen(api: _api),
+  final _pages = const [
+    HomeScreen(),
+    ReportScreen(),
+    ChallengeScreen(),
+    ProfileScreen(),
   ];
-
-  @override
-  void dispose() {
-    _api.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,14 +48,24 @@ class _RootNavState extends State<RootNav> {
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.event_seat_outlined),
-            selectedIcon: Icon(Icons.event_seat),
-            label: '실시간',
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: '홈',
           ),
           NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            selectedIcon: Icon(Icons.insights),
+            icon: Icon(Icons.bar_chart_outlined),
+            selectedIcon: Icon(Icons.bar_chart),
             label: '리포트',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.emoji_events_outlined),
+            selectedIcon: Icon(Icons.emoji_events),
+            label: '챌린지',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: '내정보',
           ),
         ],
       ),
