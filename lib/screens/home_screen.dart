@@ -5,6 +5,8 @@ import '../config.dart';
 import '../models/posture.dart';
 import '../services/api_service.dart';
 import '../services/ble_service.dart';
+import '../models/sensor_frame.dart';
+import '../widgets/seat_heatmap.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.api});
@@ -24,16 +26,45 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _bleConnected = false;
   bool _bleConnecting = false;
 
+  // ── 실시간 히트맵 (BLE 전용, 서버 무관) ──────────────────────────
+  StreamSubscription<SensorFrame>? _frameSub;
+  Timer? _fpsTimer;
+  SensorFrame? _lastFrame;
+  final List<DateTime> _recvTimes = []; // 최근 1초 수신 시각 → fps
+  double _fps = 0;
+  bool _showIndex = false;
+
   @override
   void initState() {
     super.initState();
     _poll();
     _timer = Timer.periodic(AppConfig.pollInterval, (_) => _poll());
+
+    // BLE 프레임 구독 + fps 감쇠 타이머
+    _frameSub = _ble.frames.listen(_onFrame);
+    _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final now = DateTime.now();
+      _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
+      if (mounted) setState(() => _fps = _recvTimes.length.toDouble());
+    });
+  }
+
+  void _onFrame(SensorFrame f) {
+    final now = f.receivedAt;
+    _recvTimes.add(now);
+    _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
+    if (!mounted) return;
+    setState(() {
+      _lastFrame = f;
+      _fps = _recvTimes.length.toDouble();
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _frameSub?.cancel();
+    _fpsTimer?.cancel();
     _ble.disconnect();
     super.dispose();
   }
@@ -151,12 +182,80 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
+            _buildHeatmapSection(),
             if (_error != null) _ErrorBanner(message: _error!),
             _PostureCard(data: _data),
             const SizedBox(height: 24),
             _StatusHint(data: _data),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 실시간 히트맵 섹션 (BLE 전용, 서버와 무관).
+  Widget _buildHeatmapSection() {
+    final frame = _lastFrame;
+
+    // 연결 상태: "연결됐지만 데이터 없음"과 "수신 중"을 fps 로 구분.
+    final String statusText;
+    final Color statusColor;
+    if (_bleConnecting) {
+      statusText = '스캔 중…';
+      statusColor = Colors.orange;
+    } else if (_fps > 0) {
+      statusText = '연결됨 · 수신 중';
+      statusColor = Colors.green;
+    } else if (_bleConnected) {
+      statusText = '연결됨 · 데이터 없음';
+      statusColor = Colors.redAccent;
+    } else {
+      statusText = '끊김 / 대기';
+      statusColor = Colors.grey;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.circle, size: 10, color: statusColor),
+              const SizedBox(width: 8),
+              Text(statusText,
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600, color: statusColor)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SeatHeatmap(
+            channels: frame?.channels ?? const [],
+            showIndex: _showIndex,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'frameNo ${frame?.frameNo ?? '—'} · fps ${_fps.toStringAsFixed(0)}',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+          ),
+          // Material 로 감싸 ListTile 의 Material 조상 요구를 충족(경고 반복 제거).
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('채널 번호 표시 (방향 검증용)'),
+              value: _showIndex,
+              onChanged: (v) => setState(() => _showIndex = v),
+            ),
+          ),
+        ],
       ),
     );
   }
