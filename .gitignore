@@ -43,6 +43,7 @@ __pycache__/
 *.py[cod]
 *.db
 *.bak-*
+*.bak
 .venv/
 venv/
 
