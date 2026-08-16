@@ -64,21 +64,7 @@ class MockSensorSource implements SensorSource {
   }
 }
 
-/// 실제 BLE 연결용 소스 — 전송 방식이 확정되면 이 안을 채운다.
+/// 실제 BLE 연결용 소스는 `ble_sensor_source.dart` 로 옮겼다.
 ///
-/// 사용법(나중에):
-///   flutter_blue_plus 로 센서에 연결 → 수신 콜백에서 받은 바이트를
-///   32개 정수(List<int>)로 파싱 → push(frame) 호출.
-///   그러면 화면이 그대로 실시간 반응한다.
-class BleSensorSource implements SensorSource {
-  final _ctrl = StreamController<List<int>>.broadcast();
-
-  /// BLE 수신 콜백에서 파싱한 32채널 프레임을 이걸로 흘려보낸다.
-  void push(List<int> frame) => _ctrl.add(frame);
-
-  @override
-  Stream<List<int>> frames() => _ctrl.stream;
-
-  @override
-  void dispose() => _ctrl.close();
-}
+/// 이 파일은 추상(SensorSource)과 개발용 가짜 소스(MockSensorSource)만 갖는다.
+/// 실기기 연동은 `import 'ble_sensor_source.dart';` 후 [BleSensorSource] 를 쓴다.
