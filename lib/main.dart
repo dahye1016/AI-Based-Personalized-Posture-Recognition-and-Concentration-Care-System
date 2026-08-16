@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'services/api_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/report_screen.dart';
@@ -15,10 +16,7 @@ class PostureCareApp extends StatelessWidget {
     return MaterialApp(
       title: 'PostureCare',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
-        useMaterial3: true,
-      ),
+      theme: buildAppTheme(),
       home: const RootNav(),
     );
   }
