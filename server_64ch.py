@@ -19,6 +19,9 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from database_64ch import SessionLocal, init_db, SensorData, SEAT_COLS, BACK_COLS, ALL_COLS
 from calibration import CalibrationSession, load_personal_stats
+from data_collector import RecordingSession
+from report import get_daily_report, get_weekly_report, get_streak
+from risk_tracker import RiskTracker
 
 
 class PostureCNN64(nn.Module):
@@ -77,6 +80,8 @@ cnn_model = PostureCNN64(num_classes=NUM_CLASSES).to(device)
 #    - 서버 재시작 시 이전에 저장된 개인 통계가 있으면 자동으로 불러옴
 # =====================================================================
 calib_session = CalibrationSession()
+record_session = RecordingSession()
+risk_tracker = RiskTracker()
 PERSONAL_MEAN, PERSONAL_STD, _personal_info = load_personal_stats()
 if PERSONAL_MEAN is not None:
     print(f"🙋 저장된 개인 캘리브레이션 결과를 불러왔습니다 ({_personal_info['calibrated_at']}, 샘플 {_personal_info['num_samples']}개)")
@@ -123,6 +128,67 @@ def calibration_status():
 def cancel_calibration():
     calib_session.cancel()
     return {"message": "캘리브레이션이 취소되었습니다."}
+
+
+# =====================================================================
+# 데이터 수집(녹화) API — "라벨 지정 -> N초 녹화 -> CSV 저장"
+#    실제 센서로 학습 데이터를 모을 때 사용. 예: 정자세로 30초 앉아
+#    있어달라고 하고 /record/start {"label":"정자세","duration_sec":30}
+#    호출 -> 그 동안 /sensor-data로 들어오는 값이 자동으로 라벨과 함께
+#    collected_real_data.csv에 쌓임.
+# =====================================================================
+@app.post("/record/start")
+def start_recording(label: str, duration_sec: int = 30):
+    """지정한 라벨로 N초간 자동 녹화 시작. 예: label=정자세, duration_sec=30"""
+    if record_session.active:
+        return {"message": f"이미 '{record_session.label}' 녹화가 진행 중입니다. 먼저 끝나거나 취소해주세요."}
+    record_session.start(label=label, duration_sec=duration_sec)
+    return {
+        "message": f"'{label}' 라벨로 {duration_sec}초 동안 녹화를 시작합니다. 이 시간 동안 해당 자세를 유지하며 /sensor-data 전송을 계속하세요.",
+        "status": record_session.status(),
+    }
+
+
+@app.get("/record/status")
+def recording_status():
+    return record_session.status()
+
+
+@app.post("/record/stop")
+def stop_recording():
+    """duration_sec가 되기 전에 수동으로 중단하고, 그때까지 모은 걸 즉시 저장."""
+    saved = record_session.stop_and_save()
+    return {"message": f"녹화를 중단하고 {saved}개 행을 저장했습니다.", "saved_rows": saved}
+
+
+@app.post("/record/cancel")
+def cancel_recording():
+    """저장하지 않고 그냥 취소 (녹화 도중 잘못 앉았을 때 등)."""
+    record_session.cancel()
+    return {"message": "녹화가 취소되었습니다 (저장 안 됨)."}
+
+
+# =====================================================================
+# 위험 등급 API (10 스트레칭 안내 / 12 알림 설정 화면용)
+#    나쁜 자세가 얼마나 오래 지속되고 있는지에 따라 정상/주의/위험 등급을
+#    매김. /sensor-data가 호출될 때마다 자동으로 갱신되고, 앱은
+#    /risk/status를 주기적으로 폴링해서 알림을 띄울지 판단하면 됨.
+# =====================================================================
+@app.get("/risk/status")
+def risk_status():
+    return risk_tracker.status()
+
+
+@app.post("/risk/config")
+def risk_config(
+    good_codes: str | None = None,
+    warning_sec: int | None = None,
+    danger_sec: int | None = None,
+):
+    """12 알림 설정 화면의 슬라이더 값을 반영. 예: good_codes=p1, warning_sec=60, danger_sec=300"""
+    codes = tuple(c.strip() for c in good_codes.split(",")) if good_codes else None
+    risk_tracker.configure(good_codes=codes, warning_sec=warning_sec, danger_sec=danger_sec)
+    return {"message": "위험 등급 설정이 반영되었습니다.", "status": risk_tracker.status()}
 
 
 # =====================================================================
@@ -192,6 +258,14 @@ def save_sensor_data(data: dict, db: Session = Depends(get_db)):
         else:
             print("⚠️ 캘리브레이션 샘플이 너무 적어(10개 미만) 개인 기준을 계산하지 못했습니다.")
 
+    # 데이터 수집(녹화) 진행 중이면 이 값도 라벨과 함께 CSV에 쌓임. 시간이
+    # 다 되면 자동으로 collected_real_data.csv에 저장됨.
+    record_was_active = record_session.active
+    record_label = record_session.label
+    record_session.add_sample(values)
+    if record_was_active and not record_session.active:
+        print(f"✅ '{record_label}' 녹화 완료 및 collected_real_data.csv에 저장했습니다.")
+
     # 개인 캘리브레이션 결과가 있으면 그걸 우선 사용, 없으면 학습 데이터 전체 기준 사용
     use_mean = PERSONAL_MEAN if PERSONAL_MEAN is not None else SENSOR_MEAN
     use_std = PERSONAL_STD if PERSONAL_STD is not None else SENSOR_STD
@@ -209,6 +283,9 @@ def save_sensor_data(data: dict, db: Session = Depends(get_db)):
     region_summary = summarize_regions(seat_values, back_values)
     cnn_posture_display = DISPLAY_NAMES.get(cnn_posture, cnn_posture)
 
+    # 위험 등급 갱신 (나쁜 자세 지속시간 추적 -> 정상/주의/위험)
+    risk_result = risk_tracker.update(cnn_posture)
+
     record_kwargs = {col: values[i] for i, col in enumerate(SENSOR_COLS_ORDER)}
     sensor_record = SensorData(
         **record_kwargs,
@@ -223,6 +300,7 @@ def save_sensor_data(data: dict, db: Session = Depends(get_db)):
         "cnn_posture_display": cnn_posture_display,
         "sensors": values,
         "region_summary": region_summary,
+        "risk": risk_result,
     }
 
     return {
@@ -230,8 +308,10 @@ def save_sensor_data(data: dict, db: Session = Depends(get_db)):
         "cnn_posture": cnn_posture,
         "cnn_posture_display": cnn_posture_display,  # 임시 배정 표시용 이름 (실측 검증 전)
         "region_summary": region_summary,  # 진단용 참고값 (판정에는 안 씀)
+        "risk": risk_result,  # 위험 등급 (정상/주의/위험) + 알림 필요 여부
         "used_personal_calibration": PERSONAL_MEAN is not None,
         "calibration_status": calib_session.status() if calib_session.active else None,
+        "recording_status": record_session.status() if record_session.active else None,
         "timestamp": str(sensor_record.timestamp),
     }
 
@@ -241,3 +321,33 @@ def get_current_posture():
     if hasattr(app.state, "latest_posture"):
         return app.state.latest_posture
     return {"cnn_posture": "데이터 없음", "cnn_posture_display": "데이터 없음", "sensors": [0.0] * 64}
+
+
+# =====================================================================
+# 리포트 API (07 리포트·일간 / 08 리포트·주간 화면용)
+#    DB에 쌓인 판정 로그를 자세별 비율로 집계해서 반환. 날짜(date)를
+#    안 주면 오늘/최근 7일 기준으로 계산함.
+#    예: GET /report/daily?date=2026-08-10
+# =====================================================================
+@app.get("/report/daily")
+def daily_report(date: str | None = None):
+    target = datetime.strptime(date, "%Y-%m-%d").date() if date else None
+    return get_daily_report(target)
+
+
+@app.get("/report/weekly")
+def weekly_report(end_date: str | None = None):
+    target = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
+    return get_weekly_report(target)
+
+
+# =====================================================================
+# 집중 챌린지 스트릭 API (09 집중 챌린지 화면용)
+#    good_codes: 어떤 자세를 "좋은 자세"로 볼지 (기본: p1=정자세만)
+#    min_ratio: 하루 중 그 비율이 몇 % 이상이어야 "성공한 날"로 칠지 (기본 50%)
+#    예: GET /report/streak?good_codes=p1&min_ratio=0.5
+# =====================================================================
+@app.get("/report/streak")
+def streak_report(good_codes: str = "p1", min_ratio: float = 0.5):
+    codes = tuple(c.strip() for c in good_codes.split(","))
+    return get_streak(good_codes=codes, min_ratio=min_ratio)
