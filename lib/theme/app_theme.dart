@@ -13,8 +13,8 @@ import 'package:flutter/material.dart';
 
 /// 배민 한나체 패밀리명.
 ///
-/// 폰트 파일이 등록돼 있지 않으면 시스템 기본 한글 폰트로 조용히 폴백된다.
-/// (등록 방법은 이 파일 맨 아래 주석 참고. 파일 없이도 빌드는 깨지지 않는다.)
+/// `assets/fonts/BMHANNAPro.ttf` 로 등록돼 있다 (pubspec.yaml 참고).
+/// 제목과 숫자에만 쓴다 — 자세한 내용은 이 파일 맨 아래 주석.
 const String kDisplayFont = 'BMHANNA';
 
 class AppColors {
@@ -200,18 +200,19 @@ ThemeData buildAppTheme() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 배민 한나체 등록 방법
+// 배민 한나체 Pro — 등록 완료
 //
-// 1) 우아한형제들 배포 페이지에서 `BMHANNA_11yrs_ttf.ttf` 를 받는다.
-// 2) `assets/fonts/` 에 넣는다.
-// 3) pubspec.yaml 의 `flutter:` 아래에 다음을 추가한다.
+//   폰트 파일 : assets/fonts/BMHANNAPro.ttf
+//   pubspec   : flutter > fonts > family: BMHANNA
+//   사용처    : AppText.screenTitle / statNumber / display / button
+//               (= kDisplayFont)
 //
-//      fonts:
-//        - family: BMHANNA
-//          fonts:
-//            - asset: assets/fonts/BMHANNA_11yrs_ttf.ttf
+// 다른 스타일에도 쓰고 싶으면 TextStyle 에 `fontFamily: kDisplayFont` 를
+// 추가하면 된다. 본문까지 한나체로 깔면 가독성이 떨어지니, 제목과 숫자에만
+// 쓰는 지금 구성을 권한다.
 //
-// ⚠ 파일을 넣기 전에 pubspec 에 먼저 선언하면 빌드가 깨진다
-//   ("asset not found"). 파일을 넣은 뒤에 선언할 것.
-//   선언 전까지는 시스템 기본 폰트로 폴백되며 빌드는 정상이다.
+// 폰트 제공: 우아한형제들 (디자인 산돌커뮤니케이션).
+// 무료 배포 서체이며 앱 임베딩이 허용되지만, 서체 파일 자체를 판매하거나
+// 유료 폰트로 재배포하는 것은 금지된다. 제출 전 배포 페이지의 최신 조항을
+// 한 번 확인할 것.
 // ─────────────────────────────────────────────────────────────
