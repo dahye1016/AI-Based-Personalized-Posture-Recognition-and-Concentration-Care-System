@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../config.dart';
 import '../models/posture.dart';
 import '../services/api_service.dart';
 import '../services/ble_service.dart';
@@ -17,10 +15,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  Timer? _timer;
-  CurrentPosture? _data;
-  String? _error;
-  String? _lastAlertedPosture;
 
   final BleService _ble = BleService();
   bool _bleConnected = false;
@@ -37,9 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _poll();
-    _timer = Timer.periodic(AppConfig.pollInterval, (_) => _poll());
-
     // BLE 프레임 구독 + fps 감쇠 타이머
     _frameSub = _ble.frames.listen(_onFrame);
     _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -62,26 +53,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    _timer?.cancel();
     _frameSub?.cancel();
     _fpsTimer?.cancel();
     _ble.disconnect();
     super.dispose();
-  }
-
-  Future<void> _poll() async {
-    try {
-      final data = await widget.api.fetchCurrentPosture();
-      if (!mounted) return;
-      setState(() {
-        _data = data;
-        _error = null;
-      });
-      _maybeAlert(data);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.toString());
-    }
   }
 
   Future<void> _toggleBle() async {
@@ -104,28 +79,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       }
-    }
-  }
-
-  void _maybeAlert(CurrentPosture data) {
-    if (data.isBad) {
-      if (_lastAlertedPosture != data.posture) {
-        _lastAlertedPosture = data.posture;
-        HapticFeedback.heavyImpact();
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-            ..clearSnackBars()
-            ..showSnackBar(
-              SnackBar(
-                content: Text(data.message),
-                backgroundColor: PostureStyle.of(data.posture).color,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-        }
-      }
-    } else {
-      _lastAlertedPosture = null;
     }
   }
 
@@ -152,43 +105,31 @@ class _HomeScreenState extends State<HomeScreen> {
               tooltip: _bleConnected ? 'BLE 연결됨 (탭해서 해제)' : 'ESP32 연결',
               onPressed: _toggleBle,
             ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: '새로고침',
-            onPressed: _poll,
-          ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _poll,
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            const SizedBox(height: 12),
-            if (_bleConnected)
-              Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.bluetooth_connected, color: Colors.blue),
-                    SizedBox(width: 10),
-                    Text('ESP32 센서 연결됨 - 데이터 수신 중'),
-                  ],
-                ),
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          const SizedBox(height: 12),
+          if (_bleConnected)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200),
               ),
-            _buildHeatmapSection(),
-            if (_error != null) _ErrorBanner(message: _error!),
-            _PostureCard(data: _data),
-            const SizedBox(height: 24),
-            _StatusHint(data: _data),
-          ],
-        ),
+              child: const Row(
+                children: [
+                  Icon(Icons.bluetooth_connected, color: Colors.blue),
+                  SizedBox(width: 10),
+                  Text('ESP32 센서 연결됨 - 데이터 수신 중'),
+                ],
+              ),
+            ),
+          _buildHeatmapSection(),
+        ],
       ),
     );
   }
@@ -308,27 +249,6 @@ class _PostureCard extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _StatusHint extends StatelessWidget {
-  const _StatusHint({required this.data});
-  final CurrentPosture? data;
-
-  @override
-  Widget build(BuildContext context) {
-    final ts = data?.timestamp;
-    final timeText = ts == null
-        ? '—'
-        : '${ts.hour.toString().padLeft(2, '0')}:'
-            '${ts.minute.toString().padLeft(2, '0')}:'
-            '${ts.second.toString().padLeft(2, '0')}';
-    return Center(
-      child: Text(
-        '마지막 갱신 $timeText · ${AppConfig.pollInterval.inSeconds}초마다 자동 확인',
-        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
       ),
     );
   }
