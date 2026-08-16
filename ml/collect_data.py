@@ -36,6 +36,27 @@ OUT_DIR = os.path.join("data", "raw")
 # 포트 이름에 이걸 포함하면 우선 추천 (macOS USB-시리얼 브리지 칩 계열)
 PREFERRED = ("usbserial", "wchusbserial", "usbmodem", "SLAB_USBtoUART")
 
+# 매트 좌표계 (실측 확정)
+RIGHT_HIP = range(0, 5)
+LEFT_HIP = range(5, 10)
+RIGHT_THIGH = range(10, 17)
+LEFT_THIGH = range(17, 24)
+RIGHT_KNEE = range(24, 28)
+LEFT_KNEE = range(28, 32)
+
+RIGHT = list(RIGHT_HIP) + list(RIGHT_THIGH) + list(RIGHT_KNEE)
+LEFT = list(LEFT_HIP) + list(LEFT_THIGH) + list(LEFT_KNEE)
+HIP = list(RIGHT_HIP) + list(LEFT_HIP)          # 0~9
+THIGH = list(RIGHT_THIGH) + list(LEFT_THIGH)    # 10~23
+KNEE = list(RIGHT_KNEE) + list(LEFT_KNEE)       # 24~31
+
+# 좌우 한쪽이 이 비율을 넘으면 치우쳐 앉은 것으로 본다
+BALANCE_WARN = 65.0
+
+# 이 접두사로 시작하는 자세는 좌우 불균형이 정상이라 경고를 띄우지 않는다.
+# (자세 목록 자체는 하드코딩하지 않는다 — 접두사만 본다)
+ASYMMETRIC_PREFIXES = ("lean_", "cross_leg_")
+
 
 def list_serial_ports():
     """/dev/cu.* 계열만 추려서 (추천 우선) 정렬해 돌려준다."""
@@ -64,10 +85,12 @@ def choose_port(explicit: str | None) -> str:
         return ports[0].device
 
     while True:
-        raw = input(f"\n번호 선택 [0-{len(ports) - 1}]: ").strip()
+        raw = input(f"\n번호 선택 [0-{len(ports) - 1}], 종료는 q: ").strip()
+        if raw.lower() == "q":
+            sys.exit("종료했습니다.")
         if raw.isdigit() and 0 <= int(raw) < len(ports):
             return ports[int(raw)].device
-        print("  다시 입력해 주세요.")
+        print("  다시 입력해 주세요. (종료하려면 q)")
 
 
 def parse_line(line: str):
@@ -140,7 +163,40 @@ def collect(ser, duration: float, writer, person: str, posture: str, trial: int)
     return frames, dropped, all_zero, ch_sum, ch_max, actual
 
 
-def summarize(frames, dropped, all_zero, ch_sum, ch_max, actual, out_path):
+def zone_sum(ch_sum, idx):
+    return sum(ch_sum[i] for i in idx)
+
+
+def report_balance(ch_sum, posture: str):
+    """좌우 균형과 앞뒤 분포를 출력한다. 값 자체는 가공하지 않는다."""
+    total = sum(ch_sum)
+    if total <= 0:
+        print("\n[좌우 균형 / 앞뒤 분포] 압력이 전혀 없어 계산할 수 없습니다.")
+        return
+
+    left = zone_sum(ch_sum, LEFT)
+    right = zone_sum(ch_sum, RIGHT)
+    left_pct = left / total * 100
+    right_pct = right / total * 100
+
+    print(f"\n[좌우 균형]  좌 {left_pct:.1f}%  /  우 {right_pct:.1f}%")
+
+    exempt = posture.startswith(ASYMMETRIC_PREFIXES)
+    if exempt:
+        print(f"  ('{posture}' 는 불균형이 정상인 자세라 경고를 띄우지 않습니다)")
+    elif max(left_pct, right_pct) > BALANCE_WARN:
+        side = "왼쪽" if left_pct > right_pct else "오른쪽"
+        print(f"  ⚠️ {side}으로 치우쳐 앉았을 수 있음. 재촬영 권장 "
+              f"(한쪽 {max(left_pct, right_pct):.1f}% > {BALANCE_WARN:.0f}%)")
+
+    hip_pct = zone_sum(ch_sum, HIP) / total * 100
+    thigh_pct = zone_sum(ch_sum, THIGH) / total * 100
+    knee_pct = zone_sum(ch_sum, KNEE) / total * 100
+    print(f"[앞뒤 분포]  엉덩이 {hip_pct:.1f}%  /  허벅지 {thigh_pct:.1f}%  "
+          f"/  무릎 {knee_pct:.1f}%")
+
+
+def summarize(frames, dropped, all_zero, ch_sum, ch_max, actual, out_path, posture):
     print("\n" + "=" * 62)
     print(f"저장: {out_path}")
     print(f"총 프레임      : {frames}")
@@ -156,6 +212,8 @@ def summarize(frames, dropped, all_zero, ch_sum, ch_max, actual, out_path):
     print(f"전 채널 0 프레임: {all_zero} ({zero_pct:.1f}%)")
     if zero_pct > 50:
         print("  ⚠️ 절반 이상이 빈 프레임입니다. 아무도 안 앉았거나 배선 문제일 수 있습니다.")
+
+    report_balance(ch_sum, posture)
 
     print("\n[채널별 평균 / 최대]  (평균·최대가 모두 0이면 죽은 채널 의심)")
     dead = []
@@ -218,7 +276,7 @@ def main():
     finally:
         ser.close()
 
-    summarize(*result, out_path)
+    summarize(*result, out_path, args.posture)
 
 
 if __name__ == "__main__":
