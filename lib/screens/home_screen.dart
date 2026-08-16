@@ -3,11 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/posture_alert.dart';
+import '../services/alert_store.dart';
 import '../services/posture_classifier.dart';
 import '../services/posture_layout.dart';
 import '../services/sensor_source.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
+import 'alert_history_screen.dart';
+import 'posture_alert_screen.dart';
 import 'settings_screen.dart';
 import 'stretch_screen.dart';
 
@@ -44,6 +48,18 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 나쁜 자세가 이어지기 시작한 시각.
   DateTime? _badSince;
 
+  /// 지금 이어지고 있는 나쁜 자세의 종류. 자세가 바뀌면 시간을 다시 잰다.
+  String? _badPosture;
+
+  /// 이 에피소드에 대해 이미 알림을 띄웠는지 (자세 이름으로 구분).
+  String? _alertedFor;
+
+  /// 알림 화면이 떠 있는 동안 중복으로 띄우지 않기 위한 잠금.
+  bool _alertOpen = false;
+
+  /// 오늘 몇 번째 알림인지. 보관 한도(4건)와 무관하게 계속 센다.
+  int _todayAlerts = 0;
+
   /// 최근 자세 이력 (타임라인 띠). 최대 24칸.
   final List<PostureResult> _history = [];
 
@@ -66,11 +82,18 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_history.length > 24) _history.removeAt(0);
 
       if (r.status == PostureStatus.warning) {
-        _badSince ??= DateTime.now();
+        // 자세가 바뀌면 지속 시간을 처음부터 다시 잰다.
+        if (_badPosture != r.posture) {
+          _badPosture = r.posture;
+          _badSince = DateTime.now();
+        }
       } else {
+        _badPosture = null;
         _badSince = null;
       }
     });
+
+    _maybeAlert(r);
 
     // 나쁜 자세가 새로 감지된 순간에만 진동 (REQ-F-05)
     if (r.status == PostureStatus.warning) {
@@ -81,6 +104,44 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       _lastWarned = null;
     }
+  }
+
+  /// 같은 나쁜 자세가 기준 시간(5분) 넘게 이어지면 알림 화면을 띄우고
+  /// 기록으로 남긴다. 기록은 최근 4건만 보관된다(AlertStore).
+  void _maybeAlert(PostureResult r) {
+    if (r.status != PostureStatus.warning) {
+      _alertedFor = null;
+      return;
+    }
+    final since = _badSince;
+    if (since == null) return;
+    if (_alertedFor == r.posture) return; // 이 에피소드는 이미 알렸다
+
+    final held = DateTime.now().difference(since);
+    if (held < PostureAlertScreen.threshold) return;
+
+    _alertedFor = r.posture;
+    _todayAlerts++;
+
+    final alert = PostureAlert(
+      posture: r.posture,
+      heldFor: held,
+      at: DateTime.now(),
+    );
+    AlertStore.instance.add(alert);
+
+    if (!mounted || _alertOpen) return;
+    _alertOpen = true;
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+          builder: (_) => PostureAlertScreen(
+            alert: alert,
+            todayCount: _todayAlerts,
+          ),
+        ))
+        .then((_) {
+      if (mounted) _alertOpen = false;
+    });
   }
 
   @override
@@ -144,6 +205,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const BmPill(label: 'LIVE', dot: true),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const AlertHistoryScreen()),
+                    ),
+                    icon: const Icon(Icons.notifications_none_rounded,
+                        size: 22, color: AppColors.textTertiary),
+                    tooltip: '알림 기록',
+                  ),
                   IconButton(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(
