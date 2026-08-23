@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'screens/calibration_screen.dart';
 import 'screens/challenge_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/report_screen.dart';
+import 'screens/splash_screen.dart';
 import 'screens/stretch_screen.dart';
 import 'services/fallback_sensor_source.dart';
 import 'services/sensor_source.dart';
@@ -26,7 +28,7 @@ class PostureCareApp extends StatelessWidget {
   }
 }
 
-/// 앱 진입 흐름 — 온보딩 → 정자세 측정 → 메인 탭.
+/// 앱 진입 흐름 — 스플래시 → 로그인 → 온보딩 → 정자세 측정 → 메인 탭.
 ///
 /// 데이터 입구([SensorSource])를 여기서 한 번만 만들어 아래로 내려준다.
 /// 실기기에서는 BLE, 그 외에는 가짜 소스로 자동 폴백한다.
@@ -38,14 +40,14 @@ class AppFlow extends StatefulWidget {
   State<AppFlow> createState() => _AppFlowState();
 }
 
-enum _Phase { onboarding, calibration, main }
+enum _Phase { splash, login, onboarding, calibration, main }
 
 class _AppFlowState extends State<AppFlow> {
   static const bool _useBle =
       bool.fromEnvironment('USE_BLE', defaultValue: true);
 
   late final SensorSource _source;
-  _Phase _phase = _Phase.onboarding;
+  _Phase _phase = _Phase.splash;
 
   @override
   void initState() {
@@ -67,15 +69,25 @@ class _AppFlowState extends State<AppFlow> {
     super.dispose();
   }
 
+  void _go(_Phase next) => setState(() => _phase = next);
+
   @override
   Widget build(BuildContext context) {
     return switch (_phase) {
+      _Phase.splash => SplashScreen(
+          onLogin: () => _go(_Phase.login),
+          onSkip: () => _go(_Phase.onboarding),
+        ),
+      _Phase.login => LoginScreen(
+          onDone: (_) => _go(_Phase.onboarding),
+          onSkip: () => _go(_Phase.onboarding),
+        ),
       _Phase.onboarding => OnboardingScreen(
-          onStart: () => setState(() => _phase = _Phase.calibration),
+          onStart: () => _go(_Phase.calibration),
         ),
       _Phase.calibration => CalibrationScreen(
           source: _source,
-          onDone: (_) => setState(() => _phase = _Phase.main),
+          onDone: (_) => _go(_Phase.main),
         ),
       _Phase.main => RootNav(source: _source),
     };

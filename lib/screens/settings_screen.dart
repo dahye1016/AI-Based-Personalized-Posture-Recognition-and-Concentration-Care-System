@@ -16,11 +16,12 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _alert = true;
-  bool _strongVibe = false;
-  bool _nightMute = true;
 
-  /// 나쁜 자세가 몇 초 이어지면 알릴지 (설계서 기준 20초)
-  double _holdSec = 20;
+  /// 나쁜 자세가 몇 분 이어지면 알릴지.
+  ///
+  /// 기획 확정값은 5분(PostureAlertScreen.threshold)이고,
+  /// 제작설계서 REQ-F-05 는 20초로 되어 있어 값이 다르다 — 팀 확정 필요.
+  double _holdMin = 5;
 
   /// 같은 알림을 다시 보내는 간격 (분)
   double _repeatMin = 5;
@@ -64,19 +65,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       value: _alert,
                       onChanged: (v) => setState(() => _alert = v),
                     ),
-                    const BmDivider(),
-                    BmSwitchRow(
-                      title: '진동 세기 강하게',
-                      value: _strongVibe,
-                      onChanged: (v) => setState(() => _strongVibe = v),
-                    ),
-                    const BmDivider(),
-                    BmSwitchRow(
-                      title: '야간 음소거',
-                      description: '23:00 – 07:00 사이에는 조용히',
-                      value: _nightMute,
-                      onChanged: (v) => setState(() => _nightMute = v),
-                    ),
                   ],
                 ),
               ),
@@ -92,15 +80,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     _SliderRow(
                       label: '얼마나 버티면 알릴까요',
-                      value: '${_holdSec.round()}초',
+                      value: '${_holdMin.round()}분',
                       slider: Slider(
-                        value: _holdSec,
-                        min: 5,
-                        max: 60,
-                        divisions: 11,
+                        value: _holdMin,
+                        min: 1,
+                        max: 20,
+                        divisions: 19,
                         activeColor: AppColors.primary,
                         inactiveColor: AppColors.border,
-                        onChanged: (v) => setState(() => _holdSec = v),
+                        onChanged: (v) => setState(() => _holdMin = v),
                       ),
                     ),
                     const SizedBox(height: 10),
