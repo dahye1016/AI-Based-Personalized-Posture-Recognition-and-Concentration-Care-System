@@ -44,6 +44,7 @@ __pycache__/
 *.db
 *.bak-*
 *.bak
+*.bak2
 .venv/
 venv/
 
@@ -51,3 +52,4 @@ venv/
 # firmware/ is tracked. Local IDE scratch folders only:
 sketch_*/
 data/discarded/
+data/augmented/
