@@ -53,3 +53,4 @@ venv/
 sketch_*/
 data/discarded/
 data/augmented/
+.trash/

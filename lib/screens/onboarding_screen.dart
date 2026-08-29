@@ -1,64 +1,170 @@
 import 'package:flutter/material.dart';
+
 import '../theme/app_theme.dart';
-import '../models/mock_data.dart';
-import '../widgets/common.dart';
-import '../widgets/tiles.dart';
-import '../widgets/pressure_heatmap.dart';
+import '../widgets/bm.dart';
 
-/// 초기 설정 — 자세 등록 온보딩 (별도 흐름)
+/// 온보딩 — 피그마 「04 온보딩」.
+///
+/// 앱 첫 진입에서 무엇을 해주는 앱인지 3줄로 알린다.
+/// [onStart] 를 넘기면 "시작하기"에서 호출된다(보통 기기 연결/측정으로 이동).
 class OnboardingScreen extends StatelessWidget {
-  const OnboardingScreen({super.key});
+  const OnboardingScreen({super.key, this.onStart});
 
-  static const _steps = 4;
-  static const _stepDone = 2;
-  static const _stripValues = <double>[0.1, 0.4, 0.5, 0.7, 0.9, 0.5, 0.2];
+  final VoidCallback? onStart;
+
+  static const _features = [
+    (
+      icon: Icons.notifications_active_outlined,
+      title: '실시간 자세 알림',
+      desc: '거북목·다리꼬기가 20초 넘게 이어지면 진동으로 알려요.',
+    ),
+    (
+      icon: Icons.insights_outlined,
+      title: '일간·주간 리포트',
+      desc: '하루 중 바른 자세 비율과 시간대별 변화를 정리해줘요.',
+    ),
+    (
+      icon: Icons.self_improvement_outlined,
+      title: '스트레칭 코칭',
+      desc: '카메라가 관절을 보고 제대로 따라 했는지 세어줘요.',
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('초기 설정')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-            AppSpacing.screen, 8, AppSpacing.screen, 28),
-        children: [
-          // 진행 스텝 바
-          Row(
-            children: [
-              for (int i = 0; i < _steps; i++) ...[
-                Expanded(
-                  child: Container(
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: i < _stepDone
-                          ? AppColors.primary
-                          : AppColors.surfaceAlt,
-                      borderRadius: BorderRadius.circular(3),
+      backgroundColor: AppColors.bg,
+      body: BmScreen(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 60),
+
+            // ── 브랜드 ───────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screen, 0, AppSpacing.screen, 40),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('POSTURECARE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.6,
+                        color: AppColors.primary,
+                      )),
+                  const SizedBox(height: 12),
+                  Text('의자는 그대로,\n자세만 바꿔요',
+                      style: AppText.display.copyWith(fontSize: 34)),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '쓰던 의자에 방석 하나 얹으면 끝.\n앉은 자세를 읽고, 삐딱해지면 바로 알려드려요.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.6,
+                      color: AppColors.textSecondary,
                     ),
                   ),
-                ),
-                if (i != _steps - 1) const SizedBox(width: 6),
-              ],
+                ],
+              ),
+            ),
+
+            // ── 기능 3종 ─────────────────────────
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+              child: Column(
+                children: [
+                  for (var i = 0; i < _features.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 18),
+                    _FeatureRow(
+                      icon: _features[i].icon,
+                      title: _features[i].title,
+                      desc: _features[i].desc,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            const Spacer(),
+
+            // ── CTA ──────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screen, 24, AppSpacing.screen, 12),
+              child: Column(
+                children: [
+                  BmPrimaryButton(
+                    label: '시작하기',
+                    onPressed: onStart ?? () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text('방석 센서와 블루투스 연결이 필요해요',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textTertiary,
+                      )),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureRow extends StatelessWidget {
+  const _FeatureRow({
+    required this.icon,
+    required this.title,
+    required this.desc,
+  });
+
+  final IconData icon;
+  final String title;
+  final String desc;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, size: 20, color: AppColors.primary),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  )),
+              const SizedBox(height: 3),
+              Text(desc,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.55,
+                    color: AppColors.textSecondary,
+                  )),
             ],
           ),
-          const SizedBox(height: 24),
-
-          const Text('자세 등록', style: AppText.screenTitle),
-          const SizedBox(height: 6),
-          const Text('각 자세로 앉은 뒤 버튼을 눌러주세요', style: AppText.body),
-          const SizedBox(height: 20),
-
-          ...MockData.registerPoses.map((p) => RegisterPoseItem(pose: p)),
-          const SizedBox(height: 10),
-
-          const PressureStrip(values: _stripValues),
-          const SizedBox(height: 20),
-
-          PrimaryButton(
-            label: '이 자세로 등록',
-            onPressed: () {},
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

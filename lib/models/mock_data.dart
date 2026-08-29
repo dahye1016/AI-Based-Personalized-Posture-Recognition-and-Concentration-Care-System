@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'posture_class.dart';
 
 /// UI 렌더용 목업(가짜) 데이터.
 /// 센서/BLE가 붙기 전까지 화면을 그대로 띄우기 위한 값들이다.
 /// 나중에 BleService/ApiService 결과로 이 값들만 갈아끼우면 된다.
 
 class PostureSlice {
-  final String label;
+  final PostureClass posture;
   final int percent;
-  final Color color;
-  const PostureSlice(this.label, this.percent, this.color);
+  const PostureSlice(this.posture, this.percent);
+
+  String get label => posture.label;
+  Color get color => posture.color;
 }
 
 class BadgeItem {
@@ -21,16 +24,18 @@ class BadgeItem {
 }
 
 class RegisterPose {
-  final String label;
+  final PostureClass posture;
   final PoseRegState state;
-  const RegisterPose(this.label, this.state);
+  const RegisterPose(this.posture, this.state);
+
+  String get label => posture.label;
 }
 
 enum PoseRegState { done, active, todo }
 
 class MockData {
   // ── 홈 ──────────────────────────────
-  static const currentPosture = '정자세';
+  static const currentPosture = PostureClass.straight;
   static const currentHold = '24분 유지 중';
   static const sitTime = '4h 12m';
   static const goodRatio = '78%';
@@ -41,11 +46,14 @@ class MockData {
   static const backPressure = <double>[0.4, 0.7, 0.5, 0.8, 0.6, 0.4];
 
   // ── 리포트 ──────────────────────────
+  // 합계 100%. 미착석(id 0)은 '자세 분포'에서 제외한다.
   static const distribution = <PostureSlice>[
-    PostureSlice('정자세', 52, AppColors.postureGood),
-    PostureSlice('앞으로 숙', 18, AppColors.postureLean),
-    PostureSlice('다리 꼬', 12, AppColors.postureCross),
-    PostureSlice('좌우 기울', 10, AppColors.postureTilt),
+    PostureSlice(PostureClass.straight, 52),
+    PostureSlice(PostureClass.leanForward, 18),
+    PostureSlice(PostureClass.leanRight, 10),
+    PostureSlice(PostureClass.leanLeft, 8),
+    PostureSlice(PostureClass.crossLegRight, 7),
+    PostureSlice(PostureClass.crossLegLeft, 5),
   ];
 
   // 시간대별 막대(값 0~1, 색상 카테고리)
@@ -71,12 +79,14 @@ class MockData {
   ];
 
   // ── 초기 설정(자세 등록) ─────────────
+  // 등록 대상 6종 = 7클래스에서 미착석 제외.
   static const registerPoses = <RegisterPose>[
-    RegisterPose('정자세', PoseRegState.done),
-    RegisterPose('앞으로 숙이기', PoseRegState.done),
-    RegisterPose('오른다리 꼬기', PoseRegState.active),
-    RegisterPose('왼다리 꼬기', PoseRegState.todo),
-    RegisterPose('좌우 기대기', PoseRegState.todo),
+    RegisterPose(PostureClass.straight, PoseRegState.done),
+    RegisterPose(PostureClass.leanForward, PoseRegState.done),
+    RegisterPose(PostureClass.crossLegRight, PoseRegState.active),
+    RegisterPose(PostureClass.crossLegLeft, PoseRegState.todo),
+    RegisterPose(PostureClass.leanRight, PoseRegState.todo),
+    RegisterPose(PostureClass.leanLeft, PoseRegState.todo),
   ];
 
   // ── 내 정보 ─────────────────────────
