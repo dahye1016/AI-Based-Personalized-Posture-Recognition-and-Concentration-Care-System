@@ -171,15 +171,14 @@ class _HomeScreenState extends State<HomeScreen> {
         _ => AppColors.textTertiary,
       };
 
-  /// 방석 실채널(ch0~ch30)을 물리 배치 그대로 0~1 로 정규화한 값.
+  /// 방석 32채널을 물리 배치 그대로 0~1 로 정규화한 값.
   /// 프레임이 없으면 전부 0.
   ///
   /// 이전에는 32채널을 4×4=16칸으로 2개씩 뭉쳐 그렸는데, 그리드 경계가
   /// 실제 행 경계와 어긋나 한 행에 서로 다른 부위가 섞이고 좌우 경계도
   /// 밀려 있었다. 이제 [PostureLayout.rows] 를 그대로 그리므로 화면의
   /// 위아래·좌우가 몸의 위아래·좌우와 일치한다.
-  /// 행 구성은 MDXS-16-5610 매뉴얼대로 6 / 15 / 10 이다.
-  /// ch31(더미)은 [PostureLayout.all] 에서 이미 빠져 있어 표시되지 않는다.
+  /// 행 구성은 실측으로 검증된 10 / 14 / 8 이다.
   List<List<double>> get _heatGrid {
     final grid = [
       for (final row in PostureLayout.rows) List<double>.filled(row.length, 0),
@@ -315,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: '압력 분포',
                       trailing: _frame.isEmpty
                           ? '신호 대기 중'
-                          : '${PostureLayout.realChannels} ch · 3행',
+                          : '${PostureLayout.channels} ch · 3행',
                     ),
                     const SizedBox(height: 12),
                     _HeatGrid(grid: _heatGrid),
@@ -507,7 +506,7 @@ class _PostureIcon extends StatelessWidget {
 }
 
 /// 압력 히트맵. 행 구성은 [PostureLayout.rows] 를 그대로 따른다.
-/// 행마다 셀 개수가 달라도(6/15/10) 각 행이 카드 폭을 꽉 채운다.
+/// 행마다 셀 개수가 달라도(10/14/8) 각 행이 카드 폭을 꽉 채운다.
 class _HeatGrid extends StatelessWidget {
   const _HeatGrid({required this.grid});
 
