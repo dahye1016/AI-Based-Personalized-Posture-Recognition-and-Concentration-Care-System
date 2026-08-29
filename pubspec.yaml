@@ -21,3 +21,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  fonts:
+    # 배민 한나체 Pro — 제목·숫자용 (app_theme.dart 의 kDisplayFont)
+    # 제공: 우아한형제들 / 디자인: 산돌커뮤니케이션
+    - family: BMHANNA
+      fonts:
+        - asset: assets/fonts/BMHANNAPro.ttf
