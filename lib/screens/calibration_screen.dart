@@ -101,14 +101,16 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     var total = 0.0;
     final levels = List<double>.filled(PostureLayout.channels, 0);
-    final n = ch.length < PostureLayout.channels
-        ? ch.length
-        : PostureLayout.channels;
+
+    // ch31 은 센서값이 아니라 더미다. 총압·최대값·개인 기준값 어디에도
+    // 넣지 않는다. (넣으면 더미값이 정규화를 지배해 실채널이 전부
+    // 차갑게 보이고, 흔들림 판정의 기준 총압도 함께 어긋난다.)
     var maxV = 1;
-    for (var i = 0; i < n; i++) {
-      if (ch[i] > maxV) maxV = ch[i];
+    for (final i in PostureLayout.all) {
+      if (i < ch.length && ch[i] > maxV) maxV = ch[i];
     }
-    for (var i = 0; i < n; i++) {
+    for (final i in PostureLayout.all) {
+      if (i >= ch.length) continue;
       final v = ch[i];
       if (v > _max[i]) _max[i] = v;
       _sum[i] += v;

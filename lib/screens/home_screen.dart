@@ -171,20 +171,31 @@ class _HomeScreenState extends State<HomeScreen> {
         _ => AppColors.textTertiary,
       };
 
-  /// 좌석을 4×4 로 요약한 압력값(0~1). 프레임이 없으면 전부 0.
+  /// 방석 실채널(ch0~ch30)을 물리 배치 그대로 0~1 로 정규화한 값.
+  /// 프레임이 없으면 전부 0.
+  ///
+  /// 이전에는 32채널을 4×4=16칸으로 2개씩 뭉쳐 그렸는데, 그리드 경계가
+  /// 실제 행 경계(10/14/7)와 어긋나 1행에 엉덩이와 허벅지가 섞이고
+  /// 좌우 경계도 한 칸씩 밀려 있었다. 이제 [PostureLayout.rows] 를
+  /// 그대로 그리므로 화면의 위아래·좌우가 몸의 위아래·좌우와 일치한다.
+  /// ch31(더미)은 [PostureLayout.all] 에서 이미 빠져 있어 표시되지 않는다.
   List<List<double>> get _heatGrid {
-    const rows = 4, cols = 4;
-    final grid = List.generate(rows, (_) => List<double>.filled(cols, 0));
+    final grid = [
+      for (final row in PostureLayout.rows) List<double>.filled(row.length, 0),
+    ];
     if (_frame.length < PostureLayout.channels) return grid;
 
-    final maxV = _frame.reduce((a, b) => a > b ? a : b);
+    var maxV = 0;
+    for (final i in PostureLayout.all) {
+      if (_frame[i] > maxV) maxV = _frame[i];
+    }
     if (maxV <= 0) return grid;
 
-    // 32채널을 순서대로 16칸에 2개씩 나눠 담는다(표시용 근사).
-    for (var i = 0; i < PostureLayout.channels; i++) {
-      final cell = (i * rows * cols) ~/ PostureLayout.channels;
-      final r = cell ~/ cols, c = cell % cols;
-      grid[r][c] += _frame[i] / maxV / 2;
+    for (var r = 0; r < PostureLayout.rows.length; r++) {
+      final row = PostureLayout.rows[r];
+      for (var c = 0; c < row.length; c++) {
+        grid[r][c] = _frame[row[c]] / maxV;
+      }
     }
     return grid;
   }
@@ -301,8 +312,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     BmCardCaption(
                       title: '압력 분포',
-                      trailing:
-                          _frame.isEmpty ? '신호 대기 중' : '${_frame.length} ch',
+                      trailing: _frame.isEmpty
+                          ? '신호 대기 중'
+                          : '${PostureLayout.realChannels} ch · 3행',
                     ),
                     const SizedBox(height: 12),
                     _HeatGrid(grid: _heatGrid),
@@ -493,7 +505,8 @@ class _PostureIcon extends StatelessWidget {
   }
 }
 
-/// 4×4 압력 히트맵.
+/// 압력 히트맵. 행 구성은 [PostureLayout.rows] 를 그대로 따른다.
+/// 행마다 셀 개수가 달라도(10/14/7) 각 행이 카드 폭을 꽉 채운다.
 class _HeatGrid extends StatelessWidget {
   const _HeatGrid({required this.grid});
 
@@ -510,18 +523,18 @@ class _HeatGrid extends StatelessWidget {
       child: Column(
         children: [
           for (var r = 0; r < grid.length; r++) ...[
-            if (r > 0) const SizedBox(height: 10),
+            if (r > 0) const SizedBox(height: 8),
             Row(
               children: [
                 for (var c = 0; c < grid[r].length; c++) ...[
-                  if (c > 0) const SizedBox(width: 10),
+                  if (c > 0) const SizedBox(width: 4),
                   Expanded(
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       height: 26,
                       decoration: BoxDecoration(
                         color: AppColors.heat(grid[r][c].clamp(0.0, 1.0)),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(5),
                       ),
                     ),
                   ),
