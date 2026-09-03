@@ -31,8 +31,16 @@ class PostureCareApp extends StatelessWidget {
 /// 앱 진입 흐름 — 스플래시 → 로그인 → 온보딩 → 정자세 측정 → 메인 탭.
 ///
 /// 데이터 입구([SensorSource])를 여기서 한 번만 만들어 아래로 내려준다.
-/// 실기기에서는 BLE, 그 외에는 가짜 소스로 자동 폴백한다.
-/// `--dart-define=USE_BLE=false` 로 실행하면 센서 없이 mock 으로 돌릴 수 있다.
+///
+/// 기본은 **진짜 BLE 만** 쓴다. 방석에 못 붙으면 데이터가 아예 안 흐르고,
+/// 실패 지점은 콘솔의 `[BLE]` / `[SOURCE]` 로그에 그대로 남는다.
+/// (가짜 데이터가 몰래 흘러서 "연동된 것처럼" 보이는 걸 막기 위함)
+///
+/// ```bash
+/// flutter run                                    # 진짜 BLE 만 (기본)
+/// flutter run --dart-define=MOCK_FALLBACK=true   # 방석 못 찾으면 가짜로 폴백
+/// flutter run --dart-define=USE_BLE=false        # 처음부터 가짜만 (시뮬레이터용)
+/// ```
 class AppFlow extends StatefulWidget {
   const AppFlow({super.key});
 
@@ -53,8 +61,8 @@ class _AppFlowState extends State<AppFlow> {
   void initState() {
     super.initState();
     if (_useBle) {
-      // 방석에 먼저 붙어보고, 12초 안에 프레임이 안 오면 가짜 소스로 넘어간다.
-      // 센서 없이도 화면을 끝까지 볼 수 있게 하기 위한 장치다.
+      // 방석에 붙는다. 가짜 소스 폴백은 기본으로 꺼져 있고,
+      // --dart-define=MOCK_FALLBACK=true 일 때만 켜진다.
       final s = FallbackSensorSource();
       _source = s;
       s.start();
