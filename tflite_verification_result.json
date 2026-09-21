@@ -1,0 +1,14 @@
+{
+  "pt_accuracy": 1.0,
+  "tflite_accuracy": 1.0,
+  "agreement": 1.0,
+  "label_classes": [
+    "p1",
+    "p2",
+    "p3",
+    "p4",
+    "p5",
+    "p6",
+    "p7"
+  ]
+}
