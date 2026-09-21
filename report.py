@@ -27,7 +27,6 @@ DISPLAY_NAMES = {
     "p5": "오른쪽기대기",
     "p6": "왼쪽기대기",
     "p7": "앉지않음",
-    "p8": "등받이 밀착 자세",
 }
 
 _POSTURE_CODE_RE = re.compile(r"CNN:\s*(\w+)\(")

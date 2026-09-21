@@ -2,7 +2,7 @@
 server_64ch.py
 
 방석 32채널 + 등받이 32채널 = 64채널 데이터를 받아서
-1D-CNN으로 자세(p1~p8)를 판정하는 서버.
+1D-CNN으로 자세(p1~p7)를 판정하는 서버.
 
 실행 전 준비물 (train_posture_cnn_64ch.py를 먼저 실행해서 생성):
 - posture_model_64ch.pt
@@ -68,7 +68,6 @@ DISPLAY_NAMES = {
     "p5": "오른쪽기대기",
     "p6": "왼쪽기대기",
     "p7": "앉지않음",
-    "p8": "등받이 밀착 자세",
 }
 
 cnn_model = PostureCNN64(num_classes=NUM_CLASSES).to(device)
