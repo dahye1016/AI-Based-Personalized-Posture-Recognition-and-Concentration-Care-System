@@ -24,8 +24,8 @@
 | `ml/prepare_chair_data.py` | 실측 CSV를 `chair_64ch_posture_data.csv` 형식으로 변환 |
 | `posture_model_64ch.pt`, `norm_stats_64ch.json` | 현재 학습 결과 (7클래스) |
 | `chair_64ch_posture_data.csv` | 학습에 쓴 실측 데이터 |
-| `train_posture_cnn_64ch.py` | **옛 Kaggle 8클래스용.** 현재 모델과 무관 |
-| `posture_model_64ch.tflite`, `tflite_verification_result.json` | **옛 8클래스 모델 기준.** 현재 `.pt`와 맞지 않음, 재변환 필요 |
+
+옛 Kaggle 8클래스용 파일(`train_posture_cnn_64ch.py`, `.tflite`, `tflite_verification_result.json`)은 삭제했다(git 기록에는 남아 있음). 앱용 TFLite는 새 `.pt`로 `convert_to_tflite.py`를 다시 실행해 만들어야 한다.
 
 ## 재학습 방법
 자세한 절차는 [TRAIN_IN_POSTURE64CH.md](TRAIN_IN_POSTURE64CH.md) 참고.
