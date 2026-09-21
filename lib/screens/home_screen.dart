@@ -21,10 +21,14 @@ import 'stretch_screen.dart';
 /// SensorSource(입구) → PostureClassifier(판정) → 화면.
 /// 데이터 배선은 그대로 두고 화면만 배민 스타일로 교체했다.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.source});
+  const HomeScreen({super.key, this.source, this.onOpenReport});
 
   /// 데이터 입구. 안 넘기면 가짜 소스로 자동 동작.
   final SensorSource? source;
+
+  /// 하단 탭을 리포트로 넘기는 콜백. RootNav 가 넘겨준다.
+  /// 없으면 정자세 카드의 '오늘 리포트 보기' 버튼을 숨긴다.
+  final VoidCallback? onOpenReport;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -50,6 +54,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 지금 이어지고 있는 나쁜 자세의 종류. 자세가 바뀌면 시간을 다시 잰다.
   PostureClass? _badPosture;
+
+  /// 지금 상태가 시작된 시각. 정자세·자리 비움의 지속 시간 표시에 쓴다.
+  /// 알림 발화 기준인 [_badSince] 와 달리 모든 상태를 대상으로 잰다.
+  DateTime? _stateSince;
+
+  /// [_stateSince] 를 재고 있는 자세. 바뀌면 시간을 다시 잰다.
+  PostureClass? _stateOf;
 
   /// 이 에피소드에 대해 이미 알림을 띄웠는지 (자세 이름으로 구분).
   PostureClass? _alertedFor;
@@ -81,6 +92,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _history.add(r);
       if (_history.length > 24) _history.removeAt(0);
 
+      // 정자세·자리 비움 배너의 지속 시간용 (경고와 무관하게 항상 잰다).
+      if (_stateOf != r.posture) {
+        _stateOf = r.posture;
+        _stateSince = DateTime.now();
+      }
+
       if (r.status == PostureStatus.warning) {
         // 자세가 바뀌면 지속 시간을 처음부터 다시 잰다.
         if (_badPosture != r.posture) {
@@ -106,7 +123,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// 같은 나쁜 자세가 기준 시간(5분) 넘게 이어지면 알림 화면을 띄우고
+  /// 같은 나쁜 자세가 기준 시간([PostureAlertScreen.threshold]) 넘게
+  /// 이어지면 알림 화면을 띄우고
   /// 기록으로 남긴다. 기록은 최근 4건만 보관된다(AlertStore).
   void _maybeAlert(PostureResult r) {
     if (r.status != PostureStatus.warning) {
@@ -165,6 +183,106 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Color _postureColor(PostureClass posture) => posture.color;
 
+  /// 지금 상태가 이어진 시간을 'N분' / 'N초' 로. 1분 미만이면 초로 보여준다.
+  String get _stateHeld {
+    final since = _stateSince;
+    if (since == null) return '0초';
+    final d = DateTime.now().difference(since);
+    if (d.inMinutes >= 1) return '${d.inMinutes}분';
+    return '${d.inSeconds}초';
+  }
+
+  /// 상태별 상단 배너. 연결 중(waiting)에는 배너를 띄우지 않는다.
+  Widget? get _banner {
+    if (_isBad) {
+      return _WarnBanner(
+        title: '${_result.posture.label} 자세가 감지됐어요!',
+        body: '$_heldLabel${_result.message}',
+      );
+    }
+    switch (_result.posture) {
+      case PostureClass.straight:
+        return _GoodBanner(
+          title: '자세가 아주 좋아요!',
+          body: '$_stateHeld째 바른 자세를 유지하고 있어요',
+        );
+      case PostureClass.notSitting:
+        // 자리 비움은 경고 배너 모양만 빌려 쓴다. 알림·진동은 띄우지 않는다
+        // (notSitting 은 isBad 가 아니라 status 가 warning 이 되지 않는다).
+        return const _WarnBanner(
+          title: '자리를 비웠어요',
+          body: '돌아와서 앉으면 다시 측정을 시작해요',
+        );
+      default:
+        return null;
+    }
+  }
+
+  /// 자세 카드 부제.
+  String get _cardMessage => _result.posture == PostureClass.notSitting
+      ? '$_stateHeld째 착석이 감지되지 않아요'
+      : _result.message;
+
+  /// 자세 카드 안의 행동 버튼. 연결 중에는 버튼을 두지 않는다.
+  Widget? get _cardButton {
+    if (_isBad || _result.posture == PostureClass.notSitting) {
+      return _CardButton(
+        label: '스트레칭 하러 가기',
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const StretchScreen()),
+        ),
+      );
+    }
+    if (_result.posture == PostureClass.straight) {
+      final open = widget.onOpenReport;
+      if (open == null) return null;
+      return _CardButton(label: '오늘 리포트 보기', onTap: open);
+    }
+    return null;
+  }
+
+  /// 현재 프레임에서 주어진 채널들의 합.
+  double _sum(List<int> idx) {
+    var s = 0.0;
+    for (final i in idx) {
+      if (i < _frame.length) s += _frame[i];
+    }
+    return s;
+  }
+
+  /// 압력 분포 카드의 오른쪽 상태 요약. 구역 구분은 [PostureLayout] 을 쓴다.
+  String get _pressureSummary {
+    if (_result.posture == PostureClass.waiting ||
+        _frame.length < PostureLayout.channels) {
+      return '신호 대기 중';
+    }
+    if (_result.posture == PostureClass.notSitting) {
+      return '압력이 감지되지 않아요';
+    }
+
+    final total = _sum(PostureLayout.all);
+    if (total <= 0) return '압력이 감지되지 않아요';
+
+    final l = _sum(PostureLayout.left);
+    final r = _sum(PostureLayout.right);
+    final lr = l + r;
+
+    switch (_result.posture) {
+      case PostureClass.straight:
+        if (lr <= 0) return '압력이 감지되지 않아요';
+        final balance = 100 - ((l - r).abs() / lr * 100);
+        return '좌우 균형 ${balance.round()}%';
+      case PostureClass.leanForward:
+        return '무릎 쪽 하중 ${(_sum(PostureLayout.knee) / total * 100).round()}%';
+      case PostureClass.leanBack:
+        return '엉덩이 쪽 하중 ${(_sum(PostureLayout.hip) / total * 100).round()}%';
+      default:
+        // 다리 꼬기(잠정값)와 좌우 기울임 — 좌우 비중으로 보여준다.
+        if (lr <= 0) return '압력이 감지되지 않아요';
+        return '좌 ${(l / lr * 100).round()}% · 우 ${(r / lr * 100).round()}%';
+    }
+  }
+
   /// 방석 32채널을 물리 배치 그대로 0~1 로 정규화한 값.
   /// 프레임이 없으면 전부 0.
   ///
@@ -219,28 +337,37 @@ class _HomeScreenState extends State<HomeScreen> {
                         size: 22, color: AppColors.textTertiary),
                     tooltip: '알림 기록',
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).push(
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
                           builder: (_) => const SettingsScreen()),
                     ),
-                    icon: const Icon(Icons.tune_rounded,
-                        size: 22, color: AppColors.textTertiary),
-                    tooltip: '알림 설정',
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text('설정',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textSecondary,
+                          )),
+                    ),
                   ),
                 ],
               ),
             ),
 
-            // ── 경고 배너 ─────────────────────────
-            if (_isBad)
+            // ── 상태 배너 ─────────────────────────
+            if (_banner != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                     AppSpacing.screen, 0, AppSpacing.screen, 14),
-                child: _WarnBanner(
-                  title: '${_result.posture.label} 자세가 감지됐어요!',
-                  body: '$_heldLabel${_result.message}',
-                ),
+                child: _banner,
               ),
 
             // ── 현재 자세 카드 ────────────────────
@@ -265,33 +392,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                   style:
                                       AppText.display.copyWith(fontSize: 26)),
                               const SizedBox(height: 4),
-                              Text(_result.message,
+                              Text(_cardMessage,
                                   style: AppText.caption.copyWith(height: 1.4)),
                             ],
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    GestureDetector(
-                      onTap: HapticFeedback.mediumImpact,
-                      behavior: HitTestBehavior.opaque,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppColors.primarySoft,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text('진동으로 알려주기',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            )),
-                      ),
-                    ),
+                    if (_cardButton != null) ...[
+                      const SizedBox(height: 14),
+                      _cardButton!,
+                    ],
                   ],
                 ),
               ),
@@ -306,11 +417,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     BmCardCaption(
                       title: '압력 분포',
-                      trailing: _frame.isEmpty
-                          ? '신호 대기 중'
-                          : '${PostureLayout.channels} ch · 3행',
+                      trailing: _pressureSummary,
                     ),
                     const SizedBox(height: 12),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('좌석 · 위 엉덩이 → 아래 무릎',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textTertiary,
+                          )),
+                    ),
+                    const SizedBox(height: 8),
                     _HeatGrid(grid: _heatGrid),
                   ],
                 ),
@@ -338,7 +456,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   children: [
                     BmCardCaption(
-                      title: '최근 자세',
+                      title: '최근 30분',
                       trailing: '${PostureClass.straight.label} · '
                           '${PostureClass.leanForward.label} · '
                           '${PostureClass.crossLegUnknown.label}',
@@ -351,19 +469,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
 
             const Spacer(),
-
-            // ── 스트레칭 유도 ─────────────────────
-            if (_isBad)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.screen, 14, AppSpacing.screen, 0),
-                child: BmPrimaryButton(
-                  label: '스트레칭 하러 가기',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const StretchScreen()),
-                  ),
-                ),
-              ),
             const SizedBox(height: 12),
           ],
         ),
@@ -449,6 +554,93 @@ class _WarnBanner extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 민트 정자세 배너.
+class _GoodBanner extends StatelessWidget {
+  const _GoodBanner({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: AppColors.postureGood,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check_rounded,
+                size: 20, color: Colors.white),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    )),
+                const SizedBox(height: 3),
+                Text(body,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: AppColors.textSecondary,
+                    )),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 자세 카드 안의 행동 버튼. 모양은 기존 버튼 그대로(민트 옅은 배경).
+class _CardButton extends StatelessWidget {
+  const _CardButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.primarySoft,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            )),
       ),
     );
   }

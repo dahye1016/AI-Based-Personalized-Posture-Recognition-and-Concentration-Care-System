@@ -117,7 +117,11 @@ class _RootNavState extends State<RootNav> {
   int _index = 0;
 
   late final List<Widget> _pages = [
-    HomeScreen(source: widget.source),
+    HomeScreen(
+      source: widget.source,
+      // 정자세 카드의 '오늘 리포트 보기' → 리포트 탭으로 전환
+      onOpenReport: () => setState(() => _index = 1),
+    ),
     const ReportScreen(),
     const ChallengeScreen(),
     const StretchScreen(),
