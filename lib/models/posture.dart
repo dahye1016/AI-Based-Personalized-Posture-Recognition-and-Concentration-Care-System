@@ -52,36 +52,3 @@ class CurrentPosture {
     return DateTime.tryParse(v.toString());
   }
 }
-
-/// /sensor-data 한 행 모델 (리포트용)
-class SensorRecord {
-  final List<double> sensors; // 6개
-  final String posture;
-  final DateTime? timestamp;
-
-  SensorRecord({
-    required this.sensors,
-    required this.posture,
-    this.timestamp,
-  });
-
-  factory SensorRecord.fromJson(Map<String, dynamic> json) {
-    return SensorRecord(
-      sensors: [
-        _d(json['sensor_1']),
-        _d(json['sensor_2']),
-        _d(json['sensor_3']),
-        _d(json['sensor_4']),
-        _d(json['sensor_5']),
-        _d(json['sensor_6']),
-      ],
-      posture: (json['posture'] ?? '알수없음').toString(),
-      timestamp: json['timestamp'] == null
-          ? null
-          : DateTime.tryParse(json['timestamp'].toString()),
-    );
-  }
-
-  static double _d(dynamic v) =>
-      v == null ? 0 : double.tryParse(v.toString()) ?? 0;
-}
