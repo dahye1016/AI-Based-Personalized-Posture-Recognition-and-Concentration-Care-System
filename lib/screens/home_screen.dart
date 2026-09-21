@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/posture_alert.dart';
+import '../models/posture_class.dart';
 import '../services/alert_store.dart';
 import '../services/posture_classifier.dart';
 import '../services/posture_layout.dart';
@@ -38,9 +39,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   StreamSubscription<List<int>>? _sub;
 
-  PostureResult _result =
-      const PostureResult('연결 중', PostureStatus.good, '센서 데이터를 기다리는 중...');
-  String? _lastWarned;
+  PostureResult _result = const PostureResult(PostureClass.waiting);
+  PostureClass? _lastWarned;
 
   /// 가장 최근 프레임의 채널 값 (히트맵용). 없으면 빈 리스트.
   List<int> _frame = const [];
@@ -49,10 +49,10 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _badSince;
 
   /// 지금 이어지고 있는 나쁜 자세의 종류. 자세가 바뀌면 시간을 다시 잰다.
-  String? _badPosture;
+  PostureClass? _badPosture;
 
   /// 이 에피소드에 대해 이미 알림을 띄웠는지 (자세 이름으로 구분).
-  String? _alertedFor;
+  PostureClass? _alertedFor;
 
   /// 알림 화면이 떠 있는 동안 중복으로 띄우지 않기 위한 잠금.
   bool _alertOpen = false;
@@ -163,13 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${d.inSeconds}초째 · ';
   }
 
-  Color _postureColor(String posture) => switch (posture) {
-        '거북목' => AppColors.postureLean,
-        '다리꼬기' => AppColors.postureCross,
-        '기대기' => AppColors.postureTilt,
-        '바른자세' => AppColors.postureGood,
-        _ => AppColors.textTertiary,
-      };
+  Color _postureColor(PostureClass posture) => posture.color;
 
   /// 방석 32채널을 물리 배치 그대로 0~1 로 정규화한 값.
   /// 프레임이 없으면 전부 0.
@@ -244,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.fromLTRB(
                     AppSpacing.screen, 0, AppSpacing.screen, 14),
                 child: _WarnBanner(
-                  title: '${_result.posture} 자세가 감지됐어요!',
+                  title: '${_result.posture.label} 자세가 감지됐어요!',
                   body: '$_heldLabel${_result.message}',
                 ),
               ),
@@ -267,7 +261,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(_result.posture,
+                              Text(_result.posture.label,
                                   style:
                                       AppText.display.copyWith(fontSize: 26)),
                               const SizedBox(height: 4),
@@ -343,9 +337,11 @@ class _HomeScreenState extends State<HomeScreen> {
               child: BmSoftCard(
                 child: Column(
                   children: [
-                    const BmCardCaption(
+                    BmCardCaption(
                       title: '최근 자세',
-                      trailing: '바른 · 거북목 · 다리꼬기',
+                      trailing: '${PostureClass.straight.label} · '
+                          '${PostureClass.leanForward.label} · '
+                          '${PostureClass.crossLegUnknown.label}',
                     ),
                     const SizedBox(height: 10),
                     BmBand(segments: _timelineSegments()),

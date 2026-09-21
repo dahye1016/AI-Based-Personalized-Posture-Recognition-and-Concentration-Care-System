@@ -1,14 +1,22 @@
+import '../models/posture_class.dart';
 import 'posture_layout.dart';
 
 /// 판정 상태 (좋음 / 경고)
 enum PostureStatus { good, warning }
 
-/// 판정 결과 한 건
+/// 판정 결과 한 건.
+///
+/// 라벨·색·문구는 [PostureClass] 가 단일 소스다.
+/// 이 판정기는 좌우를 가르지 못하므로 7클래스 중
+/// crossLegRight/Left, leanRight/Left 는 출력하지 않는다.
+/// 대신 잠정값 crossLegUnknown / leanBack 을 쓴다.
 class PostureResult {
-  final String posture; // 바른자세 / 거북목 / 기대기 / 다리꼬기 / 앉지않음
-  final PostureStatus status;
-  final String message;
-  const PostureResult(this.posture, this.status, this.message);
+  final PostureClass posture;
+  const PostureResult(this.posture);
+
+  PostureStatus get status =>
+      posture.isBad ? PostureStatus.warning : PostureStatus.good;
+  String get message => posture.message;
 }
 
 /// 규칙 기반 자세 판정기.
@@ -46,8 +54,7 @@ class PostureClassifier {
 
   static PostureResult classify(List<int> ch) {
     if (ch.length < PostureLayout.channels) {
-      return const PostureResult(
-          '데이터 없음', PostureStatus.good, '센서 데이터를 기다리는 중...');
+      return const PostureResult(PostureClass.waiting);
     }
 
     final front = _avg(ch, PostureLayout.front);
@@ -57,22 +64,17 @@ class PostureClassifier {
     final total = _avg(ch, PostureLayout.all);
 
     if (total < _sitThreshold) {
-      return const PostureResult(
-          '앉지 않음', PostureStatus.good, '의자에 앉으면 자세를 측정할게요.');
+      return const PostureResult(PostureClass.notSitting);
     }
     if ((left - right).abs() > _lrDiff) {
-      return const PostureResult(
-          '다리꼬기', PostureStatus.warning, '다리를 꼬고 있어요! 골반이 틀어질 수 있어요.');
+      return const PostureResult(PostureClass.crossLegUnknown);
     }
     if (front > _frontStrong && front - back > _gap) {
-      return const PostureResult(
-          '거북목', PostureStatus.warning, '목이 앞으로 나와있어요. 어깨를 펴고 턱을 당기세요.');
+      return const PostureResult(PostureClass.leanForward);
     }
     if (back > _backStrong && back - front > _gap) {
-      return const PostureResult(
-          '기대기', PostureStatus.warning, '등받이에 너무 기대고 있어요. 앞으로 조금 당겨주세요.');
+      return const PostureResult(PostureClass.leanBack);
     }
-    return const PostureResult(
-        '바른자세', PostureStatus.good, '좋아요! 바른 자세를 유지하고 있어요.');
+    return const PostureResult(PostureClass.straight);
   }
 }

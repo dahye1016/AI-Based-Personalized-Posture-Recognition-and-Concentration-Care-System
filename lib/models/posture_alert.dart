@@ -1,3 +1,5 @@
+import 'posture_class.dart';
+
 /// 나쁜 자세가 오래 이어져 사용자에게 알린 기록 한 건.
 class PostureAlert {
   const PostureAlert({
@@ -7,8 +9,8 @@ class PostureAlert {
     this.stretched = false,
   });
 
-  /// 거북목 / 다리꼬기 / 기대기 …
-  final String posture;
+  /// 어떤 자세로 알림이 났는지. 라벨·색·문구는 [PostureClass] 가 들고 있다.
+  final PostureClass posture;
 
   /// 알림을 띄운 시점까지 그 자세를 유지한 시간.
   final Duration heldFor;

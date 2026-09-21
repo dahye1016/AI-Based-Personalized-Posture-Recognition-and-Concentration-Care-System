@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/posture_class.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
 import 'stretch_coach_screen.dart';
@@ -13,27 +14,39 @@ class StretchScreen extends StatelessWidget {
 
   static const routines = <StretchRoutine>[
     StretchRoutine(
-      posture: '거북목',
+      posture: PostureClass.leanForward,
       title: '목·어깨 풀기 루틴',
       moves: ['목 옆으로 늘이기', '턱 당기기', '어깨 열기'],
       duration: '약 2분',
-      color: AppColors.postureLean,
     ),
     StretchRoutine(
-      posture: '다리꼬기',
+      posture: PostureClass.crossLegUnknown,
+      covers: {
+        PostureClass.crossLegUnknown,
+        PostureClass.crossLegRight,
+        PostureClass.crossLegLeft,
+        PostureClass.leanRight,
+        PostureClass.leanLeft,
+      },
       title: '골반 정렬 루틴',
       moves: ['골반 스트레칭', '햄스트링 늘이기'],
       duration: '약 1분 30초',
-      color: AppColors.postureCross,
     ),
     StretchRoutine(
-      posture: '기대기',
+      posture: PostureClass.leanBack,
       title: '허리 세우기 루틴',
       moves: ['허리 세우기', '코어 활성'],
       duration: '약 1분',
-      color: AppColors.postureTilt,
     ),
   ];
+
+  /// 자세에 맞는 루틴을 찾는다. 대응 루틴이 없으면 null.
+  static StretchRoutine? routineFor(PostureClass posture) {
+    for (final r in routines) {
+      if (r.covers.contains(posture)) return r;
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +59,9 @@ class StretchScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const BmHeader(eyebrow: '오늘 거북목이 40분', title: '목부터 풀어볼까요'),
+            BmHeader(
+                eyebrow: '오늘 ${top.posture.label}가 40분',
+                title: '${top.title.split(' ').first}부터 풀어볼까요'),
 
             // ── 오늘의 추천 ───────────────────────
             Padding(
@@ -148,15 +163,21 @@ class StretchRoutine {
     required this.title,
     required this.moves,
     required this.duration,
-    required this.color,
-  });
+    Set<PostureClass>? covers,
+  }) : _covers = covers;
 
-  /// 어떤 나쁜 자세에 대응하는 루틴인지
-  final String posture;
+  /// 이 루틴을 대표하는 자세 (카드 제목·색의 출처)
+  final PostureClass posture;
   final String title;
   final List<String> moves;
   final String duration;
-  final Color color;
+
+  final Set<PostureClass>? _covers;
+
+  /// 이 루틴이 커버하는 자세들. 지정하지 않으면 [posture] 하나만.
+  Set<PostureClass> get covers => _covers ?? {posture};
+
+  Color get color => posture.color;
 }
 
 class _RoutineCard extends StatelessWidget {
@@ -185,7 +206,7 @@ class _RoutineCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(13),
               ),
               child: Text(
-                routine.posture.substring(0, 1),
+                routine.posture.label.substring(0, 1),
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
@@ -200,7 +221,7 @@ class _RoutineCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(routine.posture,
+                      Text(routine.posture.label,
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,

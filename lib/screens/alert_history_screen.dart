@@ -13,13 +13,6 @@ import 'posture_alert_screen.dart';
 class AlertHistoryScreen extends StatelessWidget {
   const AlertHistoryScreen({super.key});
 
-  static Color colorOf(String posture) => switch (posture) {
-        '거북목' => AppColors.postureLean,
-        '다리꼬기' => AppColors.postureCross,
-        '기대기' => AppColors.postureTilt,
-        _ => AppColors.warnIcon,
-      };
-
   @override
   Widget build(BuildContext context) {
     final store = AlertStore.instance;
@@ -159,7 +152,7 @@ class _AlertRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = AlertHistoryScreen.colorOf(alert.posture);
+    final color = alert.posture.color;
 
     return BmCard(
       padding: const EdgeInsets.all(14),
@@ -188,7 +181,7 @@ class _AlertRow extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(alert.posture,
+                    Text(alert.posture.label,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,

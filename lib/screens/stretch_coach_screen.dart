@@ -164,7 +164,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${widget.routine.posture} 루틴',
+                          Text('${widget.routine.posture.label} 루틴',
                               style: const TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,

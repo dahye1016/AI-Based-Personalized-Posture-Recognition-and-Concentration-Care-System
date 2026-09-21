@@ -25,26 +25,12 @@ class PostureAlertScreen extends StatelessWidget {
   /// 오늘 몇 번째 알림인지 (보관 한도와 무관하게 세는 값).
   final int todayCount;
 
-  Color get _color => switch (alert.posture) {
-        '거북목' => AppColors.postureLean,
-        '다리꼬기' => AppColors.postureCross,
-        '기대기' => AppColors.postureTilt,
-        _ => AppColors.warnIcon,
-      };
+  Color get _color => alert.posture.color;
 
-  String get _advice => switch (alert.posture) {
-        '거북목' => '목과 어깨에 부담이 쌓이고 있어요.\n잠깐 펴고 가실래요?',
-        '다리꼬기' => '골반이 한쪽으로 틀어지고 있어요.\n다리를 풀고 잠깐 움직여요.',
-        '기대기' => '허리가 무너진 채로 오래 있었어요.\n앞으로 당겨 앉아볼까요?',
-        _ => '같은 자세가 너무 오래 이어졌어요.\n잠깐 움직여 주세요.',
-      };
+  String get _advice => alert.posture.advice;
 
-  String get _routine => switch (alert.posture) {
-        '거북목' => '목·어깨 풀기 루틴',
-        '다리꼬기' => '골반 정렬 루틴',
-        '기대기' => '허리 세우기 루틴',
-        _ => '가벼운 스트레칭',
-      };
+  String get _routine =>
+      StretchScreen.routineFor(alert.posture)?.title ?? '가벼운 스트레칭';
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +85,7 @@ class PostureAlertScreen extends StatelessWidget {
                   AppSpacing.screen, 0, AppSpacing.screen, 24),
               child: Column(
                 children: [
-                  Text('${alert.heldFor.inMinutes}분째 ${alert.posture}이에요',
+                  Text('${alert.heldFor.inMinutes}분째 ${alert.posture.label}이에요',
                       textAlign: TextAlign.center, style: AppText.display),
                   const SizedBox(height: 10),
                   Text(_advice,

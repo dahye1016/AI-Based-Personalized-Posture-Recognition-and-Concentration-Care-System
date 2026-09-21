@@ -180,9 +180,9 @@ class _WeeklyBody extends StatelessWidget {
                 Text('지난주보다 8%p 좋아졌어요',
                     style: AppText.display.copyWith(fontSize: 20)),
                 const SizedBox(height: 6),
-                const Text(
-                  '수요일이 제일 반듯했고, 금요일 오후에 거북목이 몰렸어요.',
-                  style: TextStyle(
+                Text(
+                  '수요일이 제일 반듯했고, 금요일 오후에 ${MockData.distribution[1].label}가 몰렸어요.',
+                  style: const TextStyle(
                     fontSize: 13,
                     height: 1.55,
                     color: AppColors.textSecondary,

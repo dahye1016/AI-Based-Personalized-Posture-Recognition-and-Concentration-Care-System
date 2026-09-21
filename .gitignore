@@ -1,7 +1,6 @@
 # Miscellaneous
 *.class
 *.log
-*.pyc
 *.swp
 .DS_Store
 .atom/
@@ -17,11 +16,6 @@ migrate_working_dir/
 *.ipr
 *.iws
 .idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -43,3 +37,20 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Python
+__pycache__/
+*.py[cod]
+*.db
+*.bak-*
+*.bak
+*.bak2
+.venv/
+venv/
+
+# Arduino
+# firmware/ is tracked. Local IDE scratch folders only:
+sketch_*/
+data/discarded/
+data/augmented/
+.trash/

@@ -117,7 +117,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 8),
                   _TextBox(
                     controller: _name,
-                    hint: '예) 정아로',
+                    hint: '예) 이음',
                     maxLength: 20,
                   ),
                   const SizedBox(height: 22),
