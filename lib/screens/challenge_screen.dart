@@ -144,7 +144,7 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(
                   AppSpacing.screen, 16, AppSpacing.screen, 12),
-              child: BmGhostButton(label: '오늘은 여기까지', onPressed: () {}),
+              child: BmGhostButton(label: '챌린지 그만두기', onPressed: () {}),
             ),
           ],
         ),

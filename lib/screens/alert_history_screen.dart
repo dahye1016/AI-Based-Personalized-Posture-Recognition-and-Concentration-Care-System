@@ -45,7 +45,7 @@ class AlertHistoryScreen extends StatelessWidget {
                     children: [
                       Expanded(
                           child: _Metric(
-                              value: '${store.alertCount}회', label: '보관 중')),
+                              value: '${store.alertCount}회', label: '오늘 알림')),
                       const SizedBox(width: 10),
                       Expanded(
                           child: _Metric(
@@ -54,7 +54,7 @@ class AlertHistoryScreen extends StatelessWidget {
                       const SizedBox(width: 10),
                       Expanded(
                           child: _Metric(
-                              value: '${store.ignoredCount}회', label: '넘김')),
+                              value: '${store.ignoredCount}회', label: '무시')),
                     ],
                   ),
                 ),
@@ -99,8 +99,8 @@ class AlertHistoryScreen extends StatelessWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            '같은 나쁜 자세가 ${PostureAlertScreen.threshold.inMinutes}분 넘게 이어지면 알려드려요. '
-                            '기록은 최근 ${AlertStore.maxRecords}건까지만 보관합니다.',
+                            '같은 나쁜 자세가 ${PostureAlertScreen.threshold.inSeconds}초 넘게 이어지면 알려드려요. '
+                            '기준은 알림 설정에서 바꿀 수 있어요.',
                             style: const TextStyle(
                               fontSize: 12,
                               height: 1.6,

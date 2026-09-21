@@ -18,7 +18,7 @@ class PostureAlertScreen extends StatelessWidget {
   });
 
   /// 알림 기준 시간. 나쁜 자세가 이만큼 이어지면 알린다.
-  static const Duration threshold = Duration(minutes: 5);
+  static const Duration threshold = Duration(seconds: 20);
 
   final PostureAlert alert;
 
@@ -85,7 +85,7 @@ class PostureAlertScreen extends StatelessWidget {
                   AppSpacing.screen, 0, AppSpacing.screen, 24),
               child: Column(
                 children: [
-                  Text('${alert.heldFor.inMinutes}분째 ${alert.posture.label}이에요',
+                  Text('현재 ${alert.posture.label}이에요',
                       textAlign: TextAlign.center, style: AppText.display),
                   const SizedBox(height: 10),
                   Text(_advice,
@@ -134,7 +134,7 @@ class PostureAlertScreen extends StatelessWidget {
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        '알림 기준: ${threshold.inMinutes}분 이상 같은 나쁜 자세',
+                        '알림 기준: ${threshold.inSeconds}초 이상 같은 나쁜 자세',
                         style: AppText.caption.copyWith(fontSize: 10),
                       ),
                     ),
@@ -204,7 +204,7 @@ class PostureAlertScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   BmGhostButton(
-                    label: '10분 뒤에 다시 알려주세요',
+                    label: '5분 뒤에 다시 알려주세요',
                     onPressed: () => Navigator.of(context).maybePop(),
                   ),
                 ],
