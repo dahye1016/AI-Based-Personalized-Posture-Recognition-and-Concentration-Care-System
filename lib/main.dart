@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
 import 'services/api_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/report_screen.dart';
+import 'screens/challenge_screen.dart';
+import 'screens/profile_screen.dart';
 
 void main() => runApp(const PostureCareApp());
 
@@ -13,10 +16,7 @@ class PostureCareApp extends StatelessWidget {
     return MaterialApp(
       title: 'PostureCare',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
-        useMaterial3: true,
-      ),
+      theme: buildAppTheme(),
       home: const RootNav(),
     );
   }
@@ -36,7 +36,9 @@ class _RootNavState extends State<RootNav> {
 
   late final List<Widget> _pages = [
     HomeScreen(api: _api),
-    ReportScreen(api: _api),
+    const ReportScreen(),
+    const ChallengeScreen(),
+    const ProfileScreen(),
   ];
 
   @override
@@ -62,6 +64,16 @@ class _RootNavState extends State<RootNav> {
             icon: Icon(Icons.insights_outlined),
             selectedIcon: Icon(Icons.insights),
             label: '리포트',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.emoji_events_outlined),
+            selectedIcon: Icon(Icons.emoji_events),
+            label: '챌린지',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: '내정보',
           ),
         ],
       ),
