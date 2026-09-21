@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../models/posture.dart';
 import '../services/api_service.dart';
 import '../services/ble_service.dart';
+import '../models/posture_class.dart';
 import '../models/sensor_frame.dart';
+import '../services/posture_model.dart';
 import '../widgets/seat_heatmap.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,9 +30,15 @@ class _HomeScreenState extends State<HomeScreen> {
   double _fps = 0;
   bool _showIndex = false;
 
+  // ── 온디바이스 자세 판정 (assets/model 의 TFLite) ──────────────────
+  PostureModel? _model;
+  PostureClass? _posture; // 안정화(다수결)된 최신 판정
+  String? _modelError;
+
   @override
   void initState() {
     super.initState();
+    _loadModel();
     // BLE 프레임 구독 + fps 감쇠 타이머
     _frameSub = _ble.frames.listen(_onFrame);
     _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -40,14 +48,30 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _loadModel() async {
+    try {
+      final m = await PostureModel.load();
+      if (!mounted) {
+        m.dispose();
+        return;
+      }
+      setState(() => _model = m);
+    } catch (e) {
+      debugPrint('[Posture] 모델 로드 실패: $e');
+      if (mounted) setState(() => _modelError = '$e');
+    }
+  }
+
   void _onFrame(SensorFrame f) {
     final now = f.receivedAt;
     _recvTimes.add(now);
     _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
     if (!mounted) return;
+    final posture = _model?.predict(f);
     setState(() {
       _lastFrame = f;
       _fps = _recvTimes.length.toDouble();
+      if (posture != null) _posture = posture;
     });
   }
 
@@ -55,6 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _frameSub?.cancel();
     _fpsTimer?.cancel();
+    _model?.dispose();
     _ble.disconnect();
     super.dispose();
   }
@@ -63,7 +88,11 @@ class _HomeScreenState extends State<HomeScreen> {
     print('버튼 눌림!');
     if (_bleConnected) {
       await _ble.disconnect();
-      setState(() => _bleConnected = false);
+      _model?.reset();
+      setState(() {
+        _bleConnected = false;
+        _posture = null;
+      });
     } else {
       setState(() => _bleConnecting = true);
       final ok = await _ble.connect();
@@ -128,7 +157,37 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+          _buildPostureCard(),
           _buildHeatmapSection(),
+        ],
+      ),
+    );
+  }
+
+  /// 모델이 판정한 현재 자세 카드. 아직 판정이 없으면 대기 상태를 보여준다.
+  Widget _buildPostureCard() {
+    final PostureClass p = _posture ?? PostureClass.waiting;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+      decoration: BoxDecoration(
+        color: p.color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.color.withOpacity(0.4), width: 2),
+      ),
+      child: Column(
+        children: [
+          Text(
+            p.label,
+            style: TextStyle(
+                fontSize: 28, fontWeight: FontWeight.bold, color: p.color),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _modelError != null ? '모델을 불러오지 못했어요.' : p.message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 15, height: 1.4),
+          ),
         ],
       ),
     );
