@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mlkit_pose/main.dart';
+import 'package:posturecare_ai/main.dart';
 
 void main() {
   testWidgets('앱이 스플래시 화면으로 시작한다', (tester) async {
