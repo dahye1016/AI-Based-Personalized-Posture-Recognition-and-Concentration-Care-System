@@ -1,0 +1,13 @@
+                  precision    recall  f1-score   support
+
+     not_sitting      1.000     1.000     1.000      1742
+sitting_straight      1.000     1.000     1.000      1742
+    lean_forward      1.000     1.000     1.000      1742
+ cross_leg_right      1.000     1.000     1.000      1742
+  cross_leg_left      1.000     1.000     1.000      1734
+      lean_right      1.000     1.000     1.000      1716
+       lean_left      1.000     1.000     1.000      1716
+
+        accuracy                          1.000     12134
+       macro avg      1.000     1.000     1.000     12134
+    weighted avg      1.000     1.000     1.000     12134

@@ -57,3 +57,10 @@
 python -m ml.prepare_chair_data --source csvdir --csv-dir data/raw --out chair_64ch_posture_data_real.csv
 python train_posture_cnn_64ch_dummy.py --data chair_64ch_posture_data_real.csv --out-suffix real
 ```
+
+## 더미 학습 데이터
+`data/dummy/chair_64ch_posture_data_dummy.csv.gz` (원본 243MB를 gzip으로 38MB로 압축). pandas가 그대로 읽는다.
+
+```bash
+python train_posture_cnn_64ch_dummy.py --data data/dummy/chair_64ch_posture_data_dummy.csv.gz --out-suffix dummy
+```
