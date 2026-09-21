@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/stretch_log.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
+import 'stretch_done_screen.dart';
 import 'stretch_screen.dart';
 
 /// 스트레칭 코칭 — 피그마 「11 스트레칭 코칭」.
@@ -16,7 +18,7 @@ import 'stretch_screen.dart';
 ///   2. `google_mlkit_pose_detection` 으로 프레임마다 관절 좌표를 얻어
 ///      [_landmarks] 를 갱신한다.
 ///   3. 관절 각도로 동작 완료를 판정해 [_count] 를 올린다.
-///   4. 영상은 저장·전송하지 않는다 (온디바이스 처리 원칙).
+///   4. 영상은 기기에서만 분석하고 저장하지 않는다 (온디바이스 처리 원칙).
 class StretchCoachScreen extends StatefulWidget {
   const StretchCoachScreen({super.key, required this.routine});
 
@@ -34,9 +36,16 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
   bool _holding = false;
   Timer? _timer;
 
+  /// 루틴을 시작한 시각. 완료 화면의 '소요 시간'에 쓴다.
+  late final DateTime _startedAt;
+
+  /// '건너뛰기'로 넘긴 동작 수. 완료 동작 수 = 전체 - 이 값.
+  int _skipped = 0;
+
   @override
   void initState() {
     super.initState();
+    _startedAt = DateTime.now();
     // ML Kit 이 붙기 전까지 진행 상황을 흉내내는 타이머.
     // 실제 연동 시에는 관절 각도 판정으로 대체한다.
     _timer = Timer.periodic(const Duration(milliseconds: 1800), (_) {
@@ -54,15 +63,33 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
     super.dispose();
   }
 
-  void _next() {
+  void _next({bool skipped = false}) {
+    if (skipped) _skipped++;
+
     if (_moveIndex < widget.routine.moves.length - 1) {
       setState(() {
         _moveIndex++;
         _count = 0;
       });
     } else {
-      Navigator.of(context).pop();
+      _finish();
     }
+  }
+
+  /// 마지막 동작까지 끝났다. 완료 화면(11-D)으로 교체한다.
+  void _finish() {
+    final total = widget.routine.moves.length;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => StretchDoneScreen(
+          routine: widget.routine,
+          elapsed: DateTime.now().difference(_startedAt),
+          completed: total - _skipped,
+          total: total,
+          todayCount: StretchLog.instance.record(),
+        ),
+      ),
+    );
   }
 
   @override
@@ -104,7 +131,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                   right: 0,
                   top: MediaQuery.of(context).padding.top + 56,
                   child: const Center(
-                    child: _GlassLabel(text: '영상은 저장·전송되지 않아요'),
+                    child: _GlassLabel(text: '기기에서만 분석 · 영상은 저장되지 않아요'),
                   ),
                 ),
 
@@ -125,7 +152,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          _holding ? '✓  좋아요, 그대로 3초' : '자세를 잡아주세요',
+                          _holding ? '좋아요 · 그대로 유지' : '자세를 잡아주세요',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -227,7 +254,10 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: BmGhostButton(label: '건너뛰기', onPressed: _next),
+                      child: BmGhostButton(
+                        label: '건너뛰기',
+                        onPressed: () => _next(skipped: true),
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -235,7 +265,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                       child: SizedBox(
                         height: 52,
                         child: FilledButton(
-                          onPressed: _next,
+                          onPressed: () => _next(),
                           style: FilledButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             shape: RoundedRectangleBorder(
@@ -260,12 +290,8 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
 
   static String _tipFor(String move) => switch (move) {
         '목 옆으로 늘이기' => '반대쪽 어깨는 아래로 눌러주세요. 통증이 느껴지면 바로 멈추세요.',
-        '턱 당기기' => '고개를 뒤로 젖히지 말고, 턱만 수평으로 당깁니다.',
-        '어깨 열기' => '가슴을 펴고 날개뼈를 모은다는 느낌으로.',
-        '골반 스트레칭' => '허리를 세운 채로 상체만 앞으로 기울입니다.',
-        '햄스트링 늘이기' => '무릎을 완전히 펴지 말고 살짝 여유를 두세요.',
-        '허리 세우기' => '배에 힘을 주고 허리 곡선을 유지합니다.',
-        '코어 활성' => '숨을 참지 말고 천천히 내쉬면서 버팁니다.',
+        '목 뒤로 젖히기' => '턱을 천천히 들어 올려 5초간 멈추세요. 어지러우면 바로 멈추세요.',
+        '팔 양 옆으로 늘리기' => '손끝까지 쭉 뻗고 어깨는 아래로 내려주세요. 가슴을 활짝 열어줍니다.',
         _ => '천천히, 반동 없이. 통증이 느껴지면 바로 멈추세요.',
       };
 }

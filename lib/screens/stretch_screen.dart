@@ -16,7 +16,8 @@ class StretchScreen extends StatelessWidget {
     StretchRoutine(
       posture: PostureClass.leanForward,
       title: '목·어깨 풀기 루틴',
-      moves: ['목 옆으로 늘이기', '턱 당기기', '어깨 열기'],
+      moves: ['목 옆으로 늘이기', '목 뒤로 젖히기', '팔 양 옆으로 늘리기'],
+      shortMoves: ['목 옆 늘이기', '목 젖히기', '팔 뻗기'],
       duration: '약 2분',
     ),
     StretchRoutine(
@@ -28,14 +29,15 @@ class StretchScreen extends StatelessWidget {
         PostureClass.leanRight,
         PostureClass.leanLeft,
       },
+      name: '다리 꼬기·기울임',
       title: '골반 정렬 루틴',
-      moves: ['골반 스트레칭', '햄스트링 늘이기'],
+      moves: ['몸통 옆으로 늘이기', '몸통 비틀기'],
       duration: '약 1분 30초',
     ),
     StretchRoutine(
       posture: PostureClass.leanBack,
       title: '허리 세우기 루틴',
-      moves: ['허리 세우기', '코어 활성'],
+      moves: ['팔 위로 뻗기', '가슴 열기'],
       duration: '약 1분',
     ),
   ];
@@ -163,14 +165,32 @@ class StretchRoutine {
     required this.title,
     required this.moves,
     required this.duration,
+    String? name,
+    List<String>? shortMoves,
     Set<PostureClass>? covers,
-  }) : _covers = covers;
+  })  : _name = name,
+        _shortMoves = shortMoves,
+        _covers = covers;
 
-  /// 이 루틴을 대표하는 자세 (카드 제목·색의 출처)
+  /// 이 루틴을 대표하는 자세 (카드 색의 출처)
   final PostureClass posture;
   final String title;
   final List<String> moves;
   final String duration;
+
+  final String? _name;
+
+  /// 루틴 카드 제목. 지정하지 않으면 [posture] 의 라벨을 쓴다.
+  String get name => _name ?? posture.label;
+
+  final List<String>? _shortMoves;
+
+  /// 카드 요약 줄에 쓰는 짧은 동작 이름. 없으면 [moves] 를 그대로 쓴다.
+  List<String> get shortMoves => _shortMoves ?? moves;
+
+  /// '약'을 뺀 소요 시간. 루틴 카드의 '3동작 · 2분' 표기에 쓴다.
+  /// (상단 추천 카드는 [duration] 을 그대로 쓴다.)
+  String get shortDuration => duration.replaceFirst('약 ', '');
 
   final Set<PostureClass>? _covers;
 
@@ -221,7 +241,7 @@ class _RoutineCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(routine.posture.label,
+                      Text(routine.name,
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
@@ -247,14 +267,14 @@ class _RoutineCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 3),
-                  Text(routine.moves.join(' · '),
+                  Text(routine.shortMoves.join(' · '),
                       style: const TextStyle(
                         fontSize: 12,
                         height: 1.5,
                         color: AppColors.textSecondary,
                       )),
                   const SizedBox(height: 3),
-                  Text('${routine.moves.length}동작 · ${routine.duration}',
+                  Text('${routine.moves.length}동작 · ${routine.shortDuration}',
                       style: AppText.caption.copyWith(fontSize: 10)),
                 ],
               ),
