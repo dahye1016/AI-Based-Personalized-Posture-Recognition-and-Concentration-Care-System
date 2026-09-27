@@ -18,11 +18,11 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _alert = true;
 
-  /// 나쁜 자세가 몇 분 이어지면 알릴지.
+  /// 나쁜 자세가 몇 초 이어지면 알릴지.
   ///
-  /// 기획 확정값은 5분(PostureAlertScreen.threshold)이고,
-  /// 제작설계서 REQ-F-05 는 20초로 되어 있어 값이 다르다 — 팀 확정 필요.
-  double _holdMin = 5;
+  /// 기본값 20초는 제작설계서 REQ-F-05 및 PostureAlertScreen.threshold 와 같다.
+  /// 다만 이 슬라이더 값은 아직 threshold 에 반영되지 않는다(화면 상태만).
+  double _holdSec = 20;
 
   /// 같은 알림을 다시 보내는 간격 (분)
   double _repeatMin = 5;
@@ -79,16 +79,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Column(
                   children: [
                     _SliderRow(
-                      label: '얼마나 버티면 알릴까요',
-                      value: '${_holdMin.round()}분',
+                      label: '나쁜 자세가 얼마나 이어지면 알려드릴까요?',
+                      value: '${_holdSec.round()}초',
                       slider: Slider(
-                        value: _holdMin,
-                        min: 1,
-                        max: 20,
-                        divisions: 19,
+                        value: _holdSec,
+                        min: 10,
+                        max: 120,
+                        divisions: 11,
                         activeColor: AppColors.primary,
                         inactiveColor: AppColors.border,
-                        onChanged: (v) => setState(() => _holdMin = v),
+                        onChanged: (v) => setState(() => _holdSec = v),
                       ),
                     ),
                     const SizedBox(height: 10),
