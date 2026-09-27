@@ -1,0 +1,13 @@
+# Production board: ESP32-S3-N16R8 (16 MB flash, 8 MB OPI PSRAM).
+# Sum = exactly 16 MB.
+# NOTE: OPI PSRAM claims GPIO35-37; MUX enables avoid those pins, so PSRAM is ON.
+# Keep this file ASCII-only - gen_esp32part.py reads it with the ascii codec.
+# Name,    Type, SubType,  Offset,   Size,      Flags
+nvs,       data, nvs,      0x9000,   0x5000,
+otadata,   data, ota,      0xE000,   0x2000,
+app0,      app,  ota_0,    0x10000,  0x240000,
+app1,      app,  ota_1,    0x250000, 0x240000,
+models,    data, spiffs,   0x490000, 0x200000,
+fit,       data, nvs,      0x690000, 0x10000,
+storage,   data, spiffs,   0x6A0000, 0x950000,
+coredump,  data, coredump, 0xFF0000, 0x10000,
