@@ -90,7 +90,7 @@ class MockData {
   ];
 
   // ── 내 정보 ─────────────────────────
-  static const userName = '김예원';
+  static const userName = '이음';
   static const userSince = '함께한 지 12일';
   static const seatBattery = 82;
   static const backBattery = 67;
