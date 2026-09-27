@@ -13,6 +13,7 @@ dependencies:
   http: ^1.2.2
   flutter_blue_plus: ^2.3.8
   permission_handler: ^11.3.1
+  tflite_flutter: ^0.12.1   # 온디바이스 자세 분류 (assets/model/posture_model.tflite)
 
 dev_dependencies:
   flutter_test:
@@ -21,6 +22,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/model/
 
   fonts:
     # 배민 한나체 Pro — 제목·숫자용 (app_theme.dart 의 kDisplayFont)
