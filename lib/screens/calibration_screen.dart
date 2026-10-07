@@ -724,15 +724,6 @@ class _DoneView extends StatelessWidget {
               ),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(
-                AppSpacing.screen, 12, AppSpacing.screen, 0),
-            child: Text(
-              '기준값은 아직 서버에 저장되지 않습니다. (캘리브레이션 API 연동 예정)',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
-            ),
-          ),
           const Spacer(),
           Padding(
             padding: const EdgeInsets.fromLTRB(

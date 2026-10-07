@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/mock_data.dart';
+import '../services/sitting_stats.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
 
@@ -67,6 +68,36 @@ class _DailyBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // 오늘 착석 / 바른 자세 — 실제 측정값 (SittingStats)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.screen, 0, AppSpacing.screen, 16),
+          child: ListenableBuilder(
+            listenable: SittingStats.instance,
+            builder: (context, _) {
+              final s = SittingStats.instance;
+              final pct = (s.straightRatio * 100).round();
+              return Row(
+                children: [
+                  Expanded(
+                    child: BmStatTile(
+                      label: '오늘 착석',
+                      value: SittingStats.format(s.sitting),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: BmStatTile(
+                      label: '바른 자세 $pct%',
+                      value: SittingStats.format(s.straight),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+
         // 자세 분포 도넛
         Padding(
           padding: const EdgeInsets.fromLTRB(

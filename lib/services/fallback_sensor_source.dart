@@ -57,6 +57,9 @@ class FallbackSensorSource implements SensorSource {
   /// BLE 링크 상태 (연결됨 / 방석 찾는 중 …).
   Stream<BleLinkState> get linkState => _ble.linkState;
 
+  /// 지금 이 순간의 BLE 링크 상태.
+  BleLinkState get linkStateNow => _ble.state;
+
   @override
   Stream<List<int>> frames() => _ctrl.stream;
 

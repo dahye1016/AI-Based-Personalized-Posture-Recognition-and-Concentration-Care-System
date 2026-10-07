@@ -1,27 +1,79 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../services/ble_sensor_source.dart' show BleLinkState;
 import '../theme/app_theme.dart';
 
 /// 스플래시 — 피그마 「00 스플래시」.
 ///
 /// 민트 전면 배경에 앱 아이콘과 이름, 그리고 로그인 버튼.
 /// 방석 연결은 뒤에서 이미 시작돼 있고, 여기서는 상태만 알린다.
-class SplashScreen extends StatelessWidget {
+///
+/// 하단 상태 문구:
+///   - 처음 [minConnecting](3초) 동안은 점 3개가 깜빡이며 '의자와 연결중입니다...'
+///   - 그 뒤 BLE 가 연결돼 있으면 점이 체크 표시로 바뀌고 '의자와 연동되었습니다'
+///   - 아직 연결 전이면 연결될 때까지 깜빡임을 유지한다.
+class SplashScreen extends StatefulWidget {
   const SplashScreen({
     super.key,
     required this.onLogin,
     required this.onSkip,
-    this.statusLabel = '의자와 연결중입니다...',
+    this.linkState,
+    this.initialLinkState,
   });
 
   final VoidCallback onLogin;
   final VoidCallback onSkip;
 
-  /// 하단에 뜨는 연결 상태 문구.
-  final String statusLabel;
+  /// 방석 BLE 링크 상태 스트림. 없으면(가짜 소스 등) 연결중 표시만 한다.
+  final Stream<BleLinkState>? linkState;
+
+  /// 화면이 뜨는 순간의 링크 상태 (이미 연결돼 있을 수 있다).
+  final BleLinkState? initialLinkState;
+
+  /// 연결이 빨라도 '연결중' 표시를 최소 이만큼은 보여준다.
+  static const Duration minConnecting = Duration(seconds: 3);
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  StreamSubscription<BleLinkState>? _sub;
+  Timer? _minTimer;
+  bool _bleConnected = false;
+  bool _minElapsed = false;
+
+  bool get _showConnected => _bleConnected && _minElapsed;
+
+  @override
+  void initState() {
+    super.initState();
+    _bleConnected = widget.initialLinkState == BleLinkState.connected;
+    _sub = widget.linkState?.listen((s) {
+      if (!mounted) return;
+      setState(() => _bleConnected = s == BleLinkState.connected);
+    });
+    _minTimer = Timer(SplashScreen.minConnecting, () {
+      if (mounted) setState(() => _minElapsed = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _minTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final onLogin = widget.onLogin;
+    final onSkip = widget.onSkip;
+    final statusLabel =
+        _showConnected ? '의자와 연동되었습니다' : '의자와 연결중입니다...';
+
     return Scaffold(
       backgroundColor: AppColors.primary,
       body: Stack(
@@ -115,8 +167,17 @@ class SplashScreen extends StatelessWidget {
                 const SizedBox(height: 20),
 
                 // 연결 상태
-                const _LoadingDots(),
-                const SizedBox(height: 14),
+                SizedBox(
+                  height: 20,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _showConnected
+                        ? const Icon(Icons.check_circle_rounded,
+                            key: ValueKey('ok'), size: 20, color: Colors.white)
+                        : const _LoadingDots(key: ValueKey('dots')),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Text(statusLabel,
                     style: TextStyle(
                       fontSize: 13,
@@ -223,7 +284,7 @@ class _Deco extends StatelessWidget {
 }
 
 class _LoadingDots extends StatefulWidget {
-  const _LoadingDots();
+  const _LoadingDots({super.key});
 
   @override
   State<_LoadingDots> createState() => _LoadingDotsState();
