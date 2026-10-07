@@ -9,6 +9,7 @@ import '../services/alert_store.dart';
 import '../services/posture_classifier.dart';
 import '../services/posture_layout.dart';
 import '../services/sensor_source.dart';
+import '../services/sitting_stats.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
 import 'alert_history_screen.dart';
@@ -84,6 +85,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onFrame(List<int> frame) {
     final r = PostureClassifier.classify(frame);
+    // 리포트의 '오늘 착석 / 바른 자세 시간' 집계
+    SittingStats.instance.record(r.posture);
     if (!mounted) return;
 
     setState(() {
@@ -312,6 +315,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return grid;
   }
 
+  /// 등받이(허리) 매트 그리드. 좌석과 같은 모양(10/14/8)이다.
+  /// 등받이 데이터 수신이 붙기 전까지는 전부 0(빈 칸)으로 그린다.
+  List<List<double>> get _backrestGrid => [
+        for (final row in PostureLayout.rows)
+          List<double>.filled(row.length, 0),
+      ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -420,6 +430,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       trailing: _pressureSummary,
                     ),
                     const SizedBox(height: 12),
+                    // 등받이(허리) 매트 — 아직 BLE 로 등받이 데이터가 안 들어와서
+                    // 좌석과 같은 모양의 빈 그리드로 자리만 잡아둔다.
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('등받이 · 위 어깨 → 아래 허리 (센서 연결 대기)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textTertiary,
+                          )),
+                    ),
+                    const SizedBox(height: 8),
+                    _HeatGrid(grid: _backrestGrid),
+                    const SizedBox(height: 14),
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text('좌석 · 위 엉덩이 → 아래 무릎',
@@ -435,23 +458,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // ── 오늘 요약 ────────────────────────
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: AppSpacing.screen),
-              child: Row(
-                children: [
-                  Expanded(child: BmStatTile(label: '바른 자세', value: '62%')),
-                  SizedBox(width: 10),
-                  Expanded(
-                      child: BmStatTile(label: '오늘 착석', value: '3시간 40분')),
-                ],
-              ),
-            ),
-
             // ── 최근 자세 타임라인 ─────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.screen, 14, AppSpacing.screen, 0),
+                  AppSpacing.screen, 0, AppSpacing.screen, 0),
               child: BmSoftCard(
                 child: Column(
                   children: [

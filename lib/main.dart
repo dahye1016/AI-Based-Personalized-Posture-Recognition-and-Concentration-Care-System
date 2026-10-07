@@ -85,6 +85,14 @@ class _AppFlowState extends State<AppFlow> {
       _Phase.splash => SplashScreen(
           onLogin: () => _go(_Phase.login),
           onSkip: () => _go(_Phase.onboarding),
+          linkState: switch (_source) {
+            FallbackSensorSource s => s.linkState,
+            _ => null,
+          },
+          initialLinkState: switch (_source) {
+            FallbackSensorSource s => s.linkStateNow,
+            _ => null,
+          },
         ),
       _Phase.login => LoginScreen(
           onDone: (_) => _go(_Phase.onboarding),
