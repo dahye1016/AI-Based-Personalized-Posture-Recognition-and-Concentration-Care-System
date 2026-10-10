@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../models/posture.dart';
 import '../services/api_service.dart';
 import '../services/ble_service.dart';
+import '../models/posture_class.dart';
 import '../models/sensor_frame.dart';
+import '../services/posture_model.dart';
 import '../widgets/seat_heatmap.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,9 +30,20 @@ class _HomeScreenState extends State<HomeScreen> {
   double _fps = 0;
   bool _showIndex = false;
 
+  // ── 온디바이스 자세 판정 (assets/model 의 TFLite) ────────────────
+  /// 모델 로드 전에는 null. 로드 실패하면 계속 null 이고 [_modelError] 에 원인이 담긴다.
+  PostureModel? _model;
+
+  /// 다수결로 안정화된 최신 판정. 아직 없으면 null (= 대기 중).
+  PostureClass? _posture;
+
+  /// 모델 로드 실패 원인. null 이면 정상.
+  String? _modelError;
+
   @override
   void initState() {
     super.initState();
+    _loadModel();
     // BLE 프레임 구독 + fps 감쇠 타이머
     _frameSub = _ble.frames.listen(_onFrame);
     _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -40,14 +53,32 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// TFLite 모델과 정규화 값을 읽는다.
+  /// 실패해도 화면은 그대로 뜨고 [_modelError] 만 채워진다 (히트맵은 계속 동작).
+  Future<void> _loadModel() async {
+    try {
+      final m = await PostureModel.load();
+      if (!mounted) {
+        m.dispose();
+        return;
+      }
+      setState(() => _model = m);
+    } catch (e) {
+      debugPrint('[Posture] 모델 로드 실패: $e');
+      if (mounted) setState(() => _modelError = '$e');
+    }
+  }
+
   void _onFrame(SensorFrame f) {
     final now = f.receivedAt;
     _recvTimes.add(now);
     _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
     if (!mounted) return;
+    final p = _model?.predict(f);
     setState(() {
       _lastFrame = f;
       _fps = _recvTimes.length.toDouble();
+      if (p != null) _posture = p;
     });
   }
 
@@ -55,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _frameSub?.cancel();
     _fpsTimer?.cancel();
+    _model?.dispose();
     _ble.disconnect();
     super.dispose();
   }
@@ -63,7 +95,12 @@ class _HomeScreenState extends State<HomeScreen> {
     print('버튼 눌림!');
     if (_bleConnected) {
       await _ble.disconnect();
-      setState(() => _bleConnected = false);
+      // 다시 붙었을 때 끊기기 직전 판정이 다수결에 남지 않게 한다.
+      _model?.reset();
+      setState(() {
+        _bleConnected = false;
+        _posture = null;
+      });
     } else {
       setState(() => _bleConnecting = true);
       final ok = await _ble.connect();
@@ -128,7 +165,56 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+          _buildPostureLine(),
           _buildHeatmapSection(),
+        ],
+      ),
+    );
+  }
+
+  /// 판정 결과 임시 한 줄. 작업 14 계획 3단계에서 피그마 자세 카드로 교체한다.
+  /// 모델 미로드·로드 실패·BLE 미연결·프레임 없음은 모두 '대기 중'으로 묶는다.
+  Widget _buildPostureLine() {
+    final String text;
+    final Color color;
+    String? detail;
+
+    if (_modelError != null) {
+      text = '판정: 모델 로드 실패';
+      color = Colors.red;
+      detail = _modelError;
+    } else if (_model == null) {
+      text = '판정: 모델 불러오는 중…';
+      color = Colors.grey;
+    } else if (!_bleConnected || _lastFrame == null || _posture == null) {
+      text = '판정: 대기 중';
+      color = Colors.grey;
+    } else {
+      text = '판정: ${_posture!.label}';
+      color = _posture!.color;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        children: [
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 20, fontWeight: FontWeight.bold, color: color),
+          ),
+          if (detail != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                detail,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              ),
+            ),
         ],
       ),
     );

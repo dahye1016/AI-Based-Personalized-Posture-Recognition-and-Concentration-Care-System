@@ -13,17 +13,21 @@ import 'posture_preprocessor.dart';
 ///   - posture_model.tflite : 입력 [1, 64, 1] float32, 출력 [1, 7] 점수
 ///   - norm_stats.json      : ch0~31 mean/std, 라벨 순서, 입력 shape
 class PostureModel {
-  PostureModel._(this._interpreter, this._pre);
+  PostureModel._(this._interpreter, this._pre, int smoothWindow)
+      : _smoother = MajoritySmoother(window: smoothWindow);
 
   static const String modelAsset = 'assets/model/posture_model.tflite';
   static const String statsAsset = 'assets/model/norm_stats.json';
 
   final Interpreter _interpreter;
   final PosturePreprocessor _pre;
-  final MajoritySmoother _smoother = MajoritySmoother();
+  final MajoritySmoother _smoother;
 
   /// assets 에서 모델과 정규화 값을 읽는다. 순서·shape 가 맞지 않으면 예외를 던진다.
-  static Future<PostureModel> load() async {
+  ///
+  /// [smoothWindow] 는 다수결 창 크기. 기본 5 = BLE Notify 10Hz 에서 0.5초.
+  /// (기존 25 는 시리얼 수집 50fps 전제였다. 같은 모델을 두 경로가 쓰므로 창만 주입한다.)
+  static Future<PostureModel> load({int smoothWindow = 5}) async {
     final stats =
         jsonDecode(await rootBundle.loadString(statsAsset)) as Map<String, dynamic>;
     final pre = PosturePreprocessor.fromJson(stats);
@@ -38,7 +42,7 @@ class PostureModel {
       throw StateError(
           '모델과 json 이 맞지 않습니다: 입력 $inShape (json ${pre.inputLength}), 출력 $outLen');
     }
-    return PostureModel._(interpreter, pre);
+    return PostureModel._(interpreter, pre, smoothWindow);
   }
 
   /// 프레임 1개 -> 원시 판정 (안정화 없음). 채널 수가 다르면 null.
