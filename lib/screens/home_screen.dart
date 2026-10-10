@@ -6,6 +6,7 @@ import '../services/ble_service.dart';
 import '../models/posture_class.dart';
 import '../models/sensor_frame.dart';
 import '../services/posture_model.dart';
+import '../services/sitting_stats.dart';
 import '../widgets/seat_heatmap.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -75,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
     if (!mounted) return;
     final p = _model?.predict(f);
+    if (p != null) SittingStats.instance.record(p, f.receivedAt);
     setState(() {
       _lastFrame = f;
       _fps = _recvTimes.length.toDouble();

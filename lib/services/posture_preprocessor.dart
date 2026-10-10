@@ -85,7 +85,8 @@ class PosturePreprocessor {
 }
 
 /// 최근 [window] 개 판정 중 가장 많은 값을 돌려줘서 화면이 깜빡이지 않게 한다.
-/// (센서가 초당 약 50프레임이라 window=25 면 0.5초 분량)
+/// 창 크기는 [PostureModel.load] 의 smoothWindow 로 주입된다 (기본 5 = BLE Notify 10Hz 에서 0.5초).
+/// 시리얼 수집(50fps)처럼 프레임이 빠른 경로에서는 25 를 넘겨야 같은 0.5초가 된다.
 class MajoritySmoother {
   MajoritySmoother({this.window = 25});
 
