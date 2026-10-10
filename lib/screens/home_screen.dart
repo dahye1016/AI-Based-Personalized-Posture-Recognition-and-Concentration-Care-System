@@ -5,8 +5,10 @@ import '../services/api_service.dart';
 import '../services/ble_service.dart';
 import '../models/posture_class.dart';
 import '../models/sensor_frame.dart';
+import '../models/sensor_layout.dart';
 import '../services/posture_model.dart';
 import '../services/sitting_stats.dart';
+import '../theme/app_theme.dart';
 import '../widgets/seat_heatmap.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -288,6 +290,92 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  // ── 아로 디자인 이식용 헬퍼 (feat/aro #16) ─────────────────────────
+  // build 연결은 다음 단계. PostureLayout 대신 SensorLayout 으로 조립한다.
+
+  /// 물리 행 순서 — 뒤(엉덩이) → 가운데(허벅지) → 앞(무릎). 10 / 14 / 8.
+  static const List<List<int>> _rows = [
+    SensorLayout.hipCh,
+    SensorLayout.thighCh,
+    SensorLayout.kneeCh,
+  ];
+
+  /// 전체 채널. 총압·정규화는 이걸 쓴다.
+  static const List<int> _all = [
+    ...SensorLayout.hipCh,
+    ...SensorLayout.thighCh,
+    ...SensorLayout.kneeCh,
+  ];
+
+  /// 현재 프레임의 채널값. 프레임이 없으면 빈 리스트.
+  List<int> get _frame => _lastFrame?.channels ?? const [];
+
+  /// 현재 프레임에서 주어진 채널들의 합.
+  double _sum(List<int> idx) {
+    var s = 0.0;
+    for (final i in idx) {
+      if (i < _frame.length) s += _frame[i];
+    }
+    return s;
+  }
+
+  /// 압력 분포 카드의 오른쪽 상태 요약. 구역 구분은 [SensorLayout] 을 쓴다.
+  String get _pressureSummary {
+    final posture = _posture ?? PostureClass.waiting;
+    if (posture == PostureClass.waiting ||
+        _frame.length < SensorLayout.nChannels) {
+      return '신호 대기 중';
+    }
+    if (posture == PostureClass.notSitting) {
+      return '압력이 감지되지 않아요';
+    }
+
+    final total = _sum(_all);
+    if (total <= 0) return '압력이 감지되지 않아요';
+
+    final l = _sum(SensorLayout.leftCh);
+    final r = _sum(SensorLayout.rightCh);
+    final lr = l + r;
+
+    switch (posture) {
+      case PostureClass.straight:
+        if (lr <= 0) return '압력이 감지되지 않아요';
+        final balance = 100 - ((l - r).abs() / lr * 100);
+        return '좌우 균형 ${balance.round()}%';
+      case PostureClass.leanForward:
+        return '무릎 쪽 하중 ${(_sum(SensorLayout.kneeCh) / total * 100).round()}%';
+      case PostureClass.leanBack:
+        return '엉덩이 쪽 하중 ${(_sum(SensorLayout.hipCh) / total * 100).round()}%';
+      default:
+        // 다리 꼬기(잠정값)와 좌우 기울임 — 좌우 비중으로 보여준다.
+        if (lr <= 0) return '압력이 감지되지 않아요';
+        return '좌 ${(l / lr * 100).round()}% · 우 ${(r / lr * 100).round()}%';
+    }
+  }
+
+  /// 방석 32채널을 물리 배치 그대로 0~1 로 정규화한 값.
+  /// 프레임이 없으면 전부 0. 행 구성은 [_rows] (10 / 14 / 8).
+  List<List<double>> get _heatGrid {
+    final grid = [
+      for (final row in _rows) List<double>.filled(row.length, 0),
+    ];
+    if (_frame.length < SensorLayout.nChannels) return grid;
+
+    var maxV = 0;
+    for (final i in _all) {
+      if (_frame[i] > maxV) maxV = _frame[i];
+    }
+    if (maxV <= 0) return grid;
+
+    for (var r = 0; r < _rows.length; r++) {
+      final row = _rows[r];
+      for (var c = 0; c < row.length; c++) {
+        grid[r][c] = _frame[row[c]] / maxV;
+      }
+    }
+    return grid;
+  }
 }
 
 class _PostureCard extends StatelessWidget {
@@ -366,6 +454,245 @@ class _ErrorBanner extends StatelessWidget {
               style: const TextStyle(fontSize: 13),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 아로 디자인 부속 위젯 (feat/aro #16 원본 그대로) ─────────────────
+
+/// 주황 경고 배너.
+class _WarnBanner extends StatelessWidget {
+  const _WarnBanner({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.warnBg,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: AppColors.warnIcon,
+              shape: BoxShape.circle,
+            ),
+            child: const Text('!',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                )),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    )),
+                const SizedBox(height: 3),
+                Text(body,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: AppColors.textSecondary,
+                    )),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 민트 정자세 배너.
+class _GoodBanner extends StatelessWidget {
+  const _GoodBanner({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusCard),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: AppColors.postureGood,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check_rounded,
+                size: 20, color: Colors.white),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    )),
+                const SizedBox(height: 3),
+                Text(body,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: AppColors.textSecondary,
+                    )),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 자세 카드 안의 행동 버튼. 모양은 기존 버튼 그대로(민트 옅은 배경).
+class _CardButton extends StatelessWidget {
+  const _CardButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.primarySoft,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            )),
+      ),
+    );
+  }
+}
+
+/// 자세 픽토그램 — 나쁜 자세면 고개가 앞으로 나온 모양.
+class _PostureIcon extends StatelessWidget {
+  const _PostureIcon({required this.color, required this.bad});
+
+  final Color color;
+  final bool bad;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        // ignore: deprecated_member_use
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Stack(
+        children: [
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 250),
+            left: bad ? 27 : 21,
+            top: 11,
+            child: Container(
+              width: 15,
+              height: 15,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          ),
+          Positioned(
+            left: 13,
+            top: 30,
+            child: Container(
+              width: 13,
+              height: 17,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(5),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 압력 히트맵. 행 구성은 [_HomeScreenState._rows] 를 그대로 따른다.
+/// 행마다 셀 개수가 달라도(10/14/8) 각 행이 카드 폭을 꽉 채운다.
+class _HeatGrid extends StatelessWidget {
+  const _HeatGrid({required this.grid});
+
+  final List<List<double>> grid;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          for (var r = 0; r < grid.length; r++) ...[
+            if (r > 0) const SizedBox(height: 8),
+            Row(
+              children: [
+                for (var c = 0; c < grid[r].length; c++) ...[
+                  if (c > 0) const SizedBox(width: 3),
+                  Expanded(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      height: 26,
+                      decoration: BoxDecoration(
+                        color: AppColors.heat(grid[r][c].clamp(0.0, 1.0)),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
         ],
       ),
     );
