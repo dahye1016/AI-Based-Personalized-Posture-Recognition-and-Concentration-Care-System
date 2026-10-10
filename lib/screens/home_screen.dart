@@ -9,7 +9,11 @@ import '../models/sensor_layout.dart';
 import '../services/posture_model.dart';
 import '../services/sitting_stats.dart';
 import '../theme/app_theme.dart';
+import '../widgets/bm.dart';
 import '../widgets/seat_heatmap.dart';
+import 'alert_history_screen.dart';
+import 'settings_screen.dart';
+import 'stretch_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.api});
@@ -123,176 +127,264 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // ── 표시용 계산 ────────────────────────────────────────────
+
+  /// 화면에 쓰는 판정. 아직 없으면 waiting(연결 중) 으로 본다.
+  PostureClass get _shown => _posture ?? PostureClass.waiting;
+
+  bool get _isBad => _posture?.isBad ?? false;
+
+  /// 상태별 상단 배너. 연결 중(waiting)에는 배너를 띄우지 않는다.
+  Widget? get _banner {
+    if (_isBad) {
+      return _WarnBanner(
+        title: '${_shown.label} 자세가 감지됐어요!',
+        body: _shown.message,
+      );
+    }
+    switch (_shown) {
+      case PostureClass.straight:
+        return const _GoodBanner(
+          title: '자세가 아주 좋아요!',
+          body: '바른 자세를 유지하고 있어요',
+        );
+      case PostureClass.notSitting:
+        // 자리 비움은 경고 배너 모양만 빌려 쓴다.
+        return const _WarnBanner(
+          title: '자리를 비웠어요',
+          body: '돌아와서 앉으면 다시 측정을 시작해요',
+        );
+      default:
+        return null;
+    }
+  }
+
+  /// 자세 카드 부제. 모델 상태가 정상이 아니면 그 원인을 대신 보여준다.
+  String get _cardMessage {
+    if (_modelError != null) return '모델 로드 실패: $_modelError';
+    if (_model == null) return '모델 불러오는 중…';
+    if (_shown == PostureClass.notSitting) return '착석이 감지되지 않아요';
+    return _shown.message;
+  }
+
+  /// 자세 카드 안의 행동 버튼. 나쁜 자세·자리 비움일 때만 둔다.
+  Widget? get _cardButton {
+    if (_isBad || _shown == PostureClass.notSitting) {
+      return _CardButton(
+        label: '스트레칭 하러 가기',
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const StretchScreen()),
+        ),
+      );
+    }
+    return null;
+  }
+
+  /// 헤더의 BLE pill. 탭하면 연결/해제. 스캔 중에는 스피너.
+  /// 수신 중이면 LIVE, 연결됐지만 데이터가 없으면 경고색, 끊김이면 회색.
+  Widget get _blePill {
+    if (_bleConnecting) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 10),
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    final BmPill pill;
+    if (_fps > 0) {
+      pill = const BmPill(label: 'LIVE', dot: true);
+    } else if (_bleConnected) {
+      pill = const BmPill(
+        label: '데이터 없음',
+        color: AppColors.warnIcon,
+        bg: AppColors.warnBg,
+        dot: true,
+      );
+    } else {
+      pill = const BmPill(
+        label: '센서 연결',
+        color: AppColors.textTertiary,
+        bg: AppColors.surface,
+      );
+    }
+    return Tooltip(
+      message: _bleConnected ? 'BLE 연결됨 (탭해서 해제)' : 'ESP32 연결',
+      child: GestureDetector(
+        onTap: _toggleBle,
+        behavior: HitTestBehavior.opaque,
+        child: pill,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('실시간 자세'),
-        actions: [
-          if (_bleConnecting)
-            const Padding(
-              padding: EdgeInsets.all(14),
-              child: SizedBox(
-                width: 20, height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          else
-            IconButton(
-              icon: Icon(
-                Icons.bluetooth,
-                color: _bleConnected ? Colors.blue : Colors.grey,
-              ),
-              tooltip: _bleConnected ? 'BLE 연결됨 (탭해서 해제)' : 'ESP32 연결',
-              onPressed: _toggleBle,
-            ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          const SizedBox(height: 12),
-          if (_bleConnected)
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue.shade200),
-              ),
-              child: const Row(
+      backgroundColor: AppColors.bg,
+      body: BmScreen(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            BmHeader(
+              eyebrow: '자세케어',
+              title: '실시간 자세',
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.bluetooth_connected, color: Colors.blue),
-                  SizedBox(width: 10),
-                  Text('ESP32 센서 연결됨 - 데이터 수신 중'),
+                  _blePill,
+                  IconButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const AlertHistoryScreen()),
+                    ),
+                    icon: const Icon(Icons.notifications_none_rounded,
+                        size: 22, color: AppColors.textTertiary),
+                    tooltip: '알림 기록',
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const SettingsScreen()),
+                    ),
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text('설정',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textSecondary,
+                          )),
+                    ),
+                  ),
                 ],
               ),
             ),
-          _buildPostureLine(),
-          _buildHeatmapSection(),
-        ],
-      ),
-    );
-  }
 
-  /// 판정 결과 임시 한 줄. 작업 14 계획 3단계에서 피그마 자세 카드로 교체한다.
-  /// 모델 미로드·로드 실패·BLE 미연결·프레임 없음은 모두 '대기 중'으로 묶는다.
-  Widget _buildPostureLine() {
-    final String text;
-    final Color color;
-    String? detail;
+            // ── 상태 배너 ─────────────────────────
+            if (_banner != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.screen, 0, AppSpacing.screen, 14),
+                child: _banner,
+              ),
 
-    if (_modelError != null) {
-      text = '판정: 모델 로드 실패';
-      color = Colors.red;
-      detail = _modelError;
-    } else if (_model == null) {
-      text = '판정: 모델 불러오는 중…';
-      color = Colors.grey;
-    } else if (!_bleConnected || _lastFrame == null || _posture == null) {
-      text = '판정: 대기 중';
-      color = Colors.grey;
-    } else {
-      text = '판정: ${_posture!.label}';
-      color = _posture!.color;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        children: [
-          Text(
-            text,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                fontSize: 20, fontWeight: FontWeight.bold, color: color),
-          ),
-          if (detail != null)
+            // ── 현재 자세 카드 ────────────────────
             Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                detail,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screen, 0, AppSpacing.screen, 14),
+              child: BmCard(
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        _PostureIcon(color: _shown.color, bad: _isBad),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(_shown.label,
+                                  style:
+                                      AppText.display.copyWith(fontSize: 26)),
+                              const SizedBox(height: 4),
+                              Text(_cardMessage,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppText.caption.copyWith(height: 1.4)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_cardButton != null) ...[
+                      const SizedBox(height: 14),
+                      _cardButton!,
+                    ],
+                  ],
+                ),
               ),
             ),
-        ],
+
+            // ── 압력 분포 ────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screen, 0, AppSpacing.screen, 14),
+              child: BmSoftCard(
+                child: Column(
+                  children: [
+                    BmCardCaption(
+                      title: '압력 분포',
+                      trailing: _pressureSummary,
+                    ),
+                    const SizedBox(height: 12),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('좌석 · 위 엉덩이 → 아래 무릎',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textTertiary,
+                          )),
+                    ),
+                    const SizedBox(height: 8),
+                    // 채널 번호를 켜면 좌표계 검증용 SeatHeatmap 으로 바꿔 그린다.
+                    if (_showIndex)
+                      SeatHeatmap(
+                        channels: _lastFrame?.channels ?? const [],
+                        showIndex: true,
+                      )
+                    else
+                      _HeatGrid(grid: _heatGrid),
+                    const SizedBox(height: 10),
+                    _buildDiagnostics(),
+                  ],
+                ),
+              ),
+            ),
+
+            const Spacer(),
+            const SizedBox(height: 12),
+          ],
+        ),
       ),
     );
   }
 
-  /// 실시간 히트맵 섹션 (BLE 전용, 서버와 무관).
-  Widget _buildHeatmapSection() {
-    final frame = _lastFrame;
-
-    // 연결 상태: "연결됐지만 데이터 없음"과 "수신 중"을 fps 로 구분.
-    final String statusText;
-    final Color statusColor;
-    if (_bleConnecting) {
-      statusText = '스캔 중…';
-      statusColor = Colors.orange;
-    } else if (_fps > 0) {
-      statusText = '연결됨 · 수신 중';
-      statusColor = Colors.green;
-    } else if (_bleConnected) {
-      statusText = '연결됨 · 데이터 없음';
-      statusColor = Colors.redAccent;
-    } else {
-      statusText = '끊김 / 대기';
-      statusColor = Colors.grey;
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.circle, size: 10, color: statusColor),
-              const SizedBox(width: 8),
-              Text(statusText,
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600, color: statusColor)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SeatHeatmap(
-            channels: frame?.channels ?? const [],
-            showIndex: _showIndex,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'frameNo ${frame?.frameNo ?? '—'} · fps ${_fps.toStringAsFixed(0)}',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-          ),
-          // Material 로 감싸 ListTile 의 Material 조상 요구를 충족(경고 반복 제거).
-          Material(
-            type: MaterialType.transparency,
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: const Text('채널 번호 표시 (방향 검증용)'),
-              value: _showIndex,
-              onChanged: (v) => setState(() => _showIndex = v),
+  /// 압력 카드 하단 진단 줄 — frameNo·fps 와 채널 번호 토글.
+  Widget _buildDiagnostics() {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            'frameNo ${_lastFrame?.frameNo ?? '—'} · fps ${_fps.toStringAsFixed(0)}',
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textTertiary,
             ),
           ),
-        ],
-      ),
+        ),
+        const Text('채널 번호',
+            style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+        Switch(
+          value: _showIndex,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onChanged: (v) => setState(() => _showIndex = v),
+        ),
+      ],
     );
   }
 
   // ── 아로 디자인 이식용 헬퍼 (feat/aro #16) ─────────────────────────
-  // build 연결은 다음 단계. PostureLayout 대신 SensorLayout 으로 조립한다.
+  // PostureLayout 대신 SensorLayout 으로 조립한다.
 
   /// 물리 행 순서 — 뒤(엉덩이) → 가운데(허벅지) → 앞(무릎). 10 / 14 / 8.
   static const List<List<int>> _rows = [
