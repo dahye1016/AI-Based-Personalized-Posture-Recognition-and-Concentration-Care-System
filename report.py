@@ -18,16 +18,13 @@ from datetime import datetime, timedelta
 
 from database_64ch import SessionLocal, SensorData
 
-# server_64ch.py의 DISPLAY_NAMES와 동일하게 유지해야 함 (표시용)
-DISPLAY_NAMES = {
-    "p1": "정자세",
-    "p2": "거북목(앞으로 숙이기)",
-    "p3": "오른다리꼬기",
-    "p4": "왼다리꼬기",
-    "p5": "오른쪽기대기",
-    "p6": "왼쪽기대기",
-    "p7": "앉지않음",
-}
+# 표시 이름은 server_64ch.py 와 같은 곳(norm_stats_64ch.json 의 label_names)에서 읽는다.
+# ⚠️ DB 에 쌓인 예전 기록("CNN: p7(앉지않음)" 등)은 7종 시절 코드라, 8종으로 바꾼 뒤에는
+#    같은 코드(p7 등)가 다른 자세로 표시된다. 8종 모델로 교체하기 전에 posture.db 를 백업하고
+#    테스트 기록은 비우는 것을 권장.
+from posture_names import load_display_names
+
+DISPLAY_NAMES = load_display_names()
 
 _POSTURE_CODE_RE = re.compile(r"CNN:\s*(\w+)\(")
 

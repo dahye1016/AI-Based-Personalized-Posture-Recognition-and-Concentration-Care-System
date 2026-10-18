@@ -6,13 +6,30 @@ import 'dart:ui' show Offset;
 /// MIRROR_LR 플래그로 뒤집는 구조였다. 실측이 끝나 가정·플래그를 제거하고
 /// 실측값을 직접 정의한다.
 ///
+/// ★ 2026-10-18: 방석·등받이 매트를 모두 뒤집은 뒤(64ch 첫 실측) 기준으로 좌우를 다시 정의했다.
+///   (뒤집기 전 방석: ch0~4 = 오른 엉덩이 → 지금: ch0~4 = 왼 엉덩이.)
+///   위·아래 방향(엉덩이 ch0~9 / 허벅지 ch10~23 / 무릎 ch24~31)은 그대로다.
+///   근거: data/raw_64ch 의 lean_right/lean_left 등받이 반응(전원 일관)과 팀 확인.
+///   ※ 뒤집기 전에 모은 방석 32ch 데이터(data/raw 등)는 좌우가 반대다.
+///
 /// 좌표계 — 의자에 앉은 사람을 "위에서 내려다본" 그림:
 ///   · y축: 0=화면 위=엉덩이(0~9), y 클수록 화면 아래=무릎(24~31)
 ///          (표시상의 선택이며 판정 로직과 무관. 그룹 정의는 실측 그대로.)
 ///   · x축: 0=화면 왼쪽=사람의 오른쪽 (마주 보는 게 아니라 위에서 보므로)
 ///
-/// 실측 확정 2026-08-09 — 실기기 BLE 수신 상태에서
+/// 실측 확정 2026-08-09 (뒤집기 전 기준) — 실기기 BLE 수신 상태에서
 /// 채널 번호를 화면에 표시하고 각 부위를 직접 눌러 확인함
+///
+/// 등받이 매트 (ch32~63, 2기기 연결 시 등받이 보드의 ch0~31 이 여기에 대응):
+///   좌석과 같은 10/14/8 구조 — 허리 줄 32~41 / 중간 줄 42~55 / 어깨 줄 56~63.
+///   ★ 2026-10-18: 뒤집은 뒤 기준. 좌석과 등받이는 좌우 방향이 서로 반대다.
+///     · 좌석  : 번호가 작을수록 사용자의 왼쪽 (ch0~4 = 왼 엉덩이)
+///     · 등받이: 번호가 작을수록 사용자의 오른쪽 (ch32~36 = 오른 허리, ch56~59 = 오른 어깨)
+///   근거: data/raw_64ch 의 lean_right/lean_left (4명·3명 전원 일관).
+///     오른쪽 기대기 → ch32~34, 42~45, 56~58 반응 / 왼쪽 기대기 → ch39~41, 49~55, 61~63 반응.
+///   ※ 뒤집기 전에 모은 등받이 데이터(있다면)는 좌우가 반대라 이 정의와 맞지 않는다.
+///   ※ 좌석의 좌우는 팀 확인(방석도 뒤집음)에 따랐다. 등받이처럼 데이터로 경계를 확정한
+///     것은 아니므로, 방석 한 칸을 눌러 보는 탭 테스트로 한 번 확인하면 좋다.
 class SensorLayout {
   SensorLayout._();
 
@@ -26,13 +43,13 @@ class SensorLayout {
   // 실측 확정 2026-08-09 — 실기기 BLE 수신 상태에서
   // 채널 번호를 화면에 표시하고 각 부위를 직접 눌러 확인함
   //
-  // 각 행에서 번호 증가 = 몸 바깥(오른쪽) → 안쪽 → 반대편 바깥(왼쪽).
-  static const List<int> hipRight = [0, 1, 2, 3, 4]; // 오른쪽 엉덩이 (0=몸 바깥쪽)
-  static const List<int> hipLeft = [5, 6, 7, 8, 9]; // 왼쪽 엉덩이
-  static const List<int> thighRight = [10, 11, 12, 13, 14, 15, 16]; // 오른쪽 허벅지
-  static const List<int> thighLeft = [17, 18, 19, 20, 21, 22, 23]; // 왼쪽 허벅지
-  static const List<int> kneeRight = [24, 25, 26, 27]; // 오른쪽 무릎
-  static const List<int> kneeLeft = [28, 29, 30, 31]; // 왼쪽 무릎
+  // 뒤집은 뒤: 각 행에서 번호 증가 = 몸 바깥(왼쪽) → 안쪽 → 반대편 바깥(오른쪽).
+  static const List<int> hipLeft = [0, 1, 2, 3, 4]; // 왼쪽 엉덩이 (0=몸 바깥쪽)
+  static const List<int> hipRight = [5, 6, 7, 8, 9]; // 오른쪽 엉덩이 (9=몸 바깥쪽)
+  static const List<int> thighLeft = [10, 11, 12, 13, 14, 15, 16]; // 왼쪽 허벅지
+  static const List<int> thighRight = [17, 18, 19, 20, 21, 22, 23]; // 오른쪽 허벅지
+  static const List<int> kneeLeft = [24, 25, 26, 27]; // 왼쪽 무릎
+  static const List<int> kneeRight = [28, 29, 30, 31]; // 오른쪽 무릎
 
   // 부위별 (좌우 합침)
   static const List<int> hipCh = [...hipRight, ...hipLeft]; // 0~9
@@ -42,6 +59,48 @@ class SensorLayout {
   // 좌우별 (부위 합침) — 사람 기준
   static const List<int> rightCh = [...hipRight, ...thighRight, ...kneeRight];
   static const List<int> leftCh = [...hipLeft, ...thighLeft, ...kneeLeft];
+
+  // ── 등받이 채널 그룹 (ch32~63) ────────────────────────────────────
+  // ★★ 2026-10-18 매트를 뒤집은 뒤 기준. 좌석과는 좌우 방향이 반대다:
+  //    등받이는 각 행에서 번호 증가 = 사용자의 오른쪽 → 왼쪽 (좌석은 왼쪽 → 오른쪽).
+  // 실측(lean_right/lean_left): 오른 반응 ch32~34, 42~45, 56~58 / 왼 반응 ch39~41, 49~55, 61~63.
+  // 추정: 중간 줄 좌우 경계(48|49), ch59(오른), ch60(왼) — ch48, ch59, ch60 은 반응이 약해서
+  //       이번 데이터로는 확정하지 못했다. 다음 실측 때 확정.
+  //
+  // nChannels(32) 는 좌석 전용으로 그대로 둔다 (BLE 파싱·홈 화면이 32 전제).
+  static const int backFirstCh = 32; // 등받이 보드 ch0 -> 64ch 프레임의 ch32
+  static const int nBackChannels = 32;
+  static const int nAllChannels = 64; // 좌석 + 등받이 (2기기 연결)
+
+  static const List<int> backWaistRight = [32, 33, 34, 35, 36]; // 오른쪽 허리 (실측)
+  static const List<int> backWaistLeft = [37, 38, 39, 40, 41]; // 왼쪽 허리 (실측)
+  static const List<int> backMidRight = [42, 43, 44, 45, 46, 47, 48]; // 오른쪽 중간 (경계 추정)
+  static const List<int> backMidLeft = [49, 50, 51, 52, 53, 54, 55]; // 왼쪽 중간 (경계 추정)
+  static const List<int> backShoulderRight = [56, 57, 58, 59]; // 오른쪽 어깨 (59 추정)
+  static const List<int> backShoulderLeft = [60, 61, 62, 63]; // 왼쪽 어깨 (60 추정)
+
+  // 부위별 (좌우 합침)
+  static const List<int> backWaistCh = [...backWaistLeft, ...backWaistRight]; // 32~41
+  static const List<int> backMidCh = [...backMidLeft, ...backMidRight]; // 42~55
+  static const List<int> backShoulderCh = [
+    ...backShoulderLeft,
+    ...backShoulderRight,
+  ]; // 56~63
+
+  // 좌우별 (부위 합침) — 사람 기준
+  static const List<int> backLeftCh = [
+    ...backWaistLeft,
+    ...backMidLeft,
+    ...backShoulderLeft,
+  ];
+  static const List<int> backRightCh = [
+    ...backWaistRight,
+    ...backMidRight,
+    ...backShoulderRight,
+  ];
+
+  // 등받이 전체
+  static const List<int> backCh = [...backWaistCh, ...backMidCh, ...backShoulderCh];
 
   // 노드 1개가 대표하는 면적 (cm²) — 접촉 면적 계산용 근사값
   static const double nodeAreaCm2 =
@@ -63,7 +122,9 @@ class SensorLayout {
     const margin = 12.0;
 
     // 사람의 오른쪽 그룹 → 화면 왼쪽 절반(x 작음), 왼쪽 그룹 → 오른쪽 절반.
-    // 그룹 내 index 증가 → x 증가 (몸 바깥→안쪽 방향과 일치).
+    // place() 는 리스트 앞쪽일수록 x 가 작게 놓는다. 뒤집은 뒤에는 번호가 오른쪽 그룹에서는
+    // 안쪽→바깥, 왼쪽 그룹에서는 바깥→안쪽으로 늘어나므로, 화면에서 바깥이 화면 끝에 오도록
+    // 오른쪽 그룹은 번호 역순(.reversed), 왼쪽 그룹도 역순으로 넘긴다.
     void place(List<int> group, double x0, double x1, double y) {
       final n = group.length;
       for (var i = 0; i < n; i++) {
@@ -72,16 +133,17 @@ class SensorLayout {
       }
     }
 
-    place(hipRight, margin, half - gap, _hipY); // 화면 좌상단
-    place(hipLeft, half + gap, widthMm - margin, _hipY); // 화면 우상단
-    place(thighRight, margin, half - gap, _thighY);
-    place(thighLeft, half + gap, widthMm - margin, _thighY);
-    place(kneeRight, margin, half - gap, _kneeY); // 화면 좌하단
-    place(kneeLeft, half + gap, widthMm - margin, _kneeY); // 화면 우하단
+    place(hipRight.reversed.toList(), margin, half - gap, _hipY); // 화면 좌상단
+    place(hipLeft.reversed.toList(), half + gap, widthMm - margin, _hipY); // 화면 우상단
+    place(thighRight.reversed.toList(), margin, half - gap, _thighY);
+    place(thighLeft.reversed.toList(), half + gap, widthMm - margin, _thighY);
+    place(kneeRight.reversed.toList(), margin, half - gap, _kneeY); // 화면 좌하단
+    place(kneeLeft.reversed.toList(), half + gap, widthMm - margin, _kneeY); // 화면 우하단
 
     // 검증: 0~31 이 중복·누락 없이 정확히 한 번씩, 좌표 개수 32.
     assert(_isComplete(), '채널 그룹에 중복/누락이 있습니다');
     assert(pos.length == nChannels, '좌표 개수가 $nChannels 이 아닙니다');
+    assert(_isBackComplete(), '등받이 채널 그룹에 중복/누락이 있습니다');
     return pos;
   }
 
@@ -94,5 +156,16 @@ class SensorLayout {
         all.toSet().containsAll(expected);
     return covers([...hipCh, ...thighCh, ...kneeCh]) &&
         covers([...rightCh, ...leftCh]);
+  }
+
+  /// 등받이 부위별·좌우별 두 분할 모두 32~63 을 정확히 한 번씩 덮는지 검증.
+  static bool _isBackComplete() {
+    final expected =
+        List<int>.generate(nBackChannels, (i) => backFirstCh + i).toSet();
+    bool covers(List<int> all) =>
+        all.length == nBackChannels &&
+        all.toSet().length == nBackChannels &&
+        all.toSet().containsAll(expected);
+    return covers(backCh) && covers([...backLeftCh, ...backRightCh]);
   }
 }

@@ -92,15 +92,10 @@ def send_data_verbose(posture: str):
         print(f"❌ 서버 연결 오류: {e}")
 
 
-DISPLAY_NAMES = {
-    "p1": "정자세",
-    "p2": "거북목(앞으로 숙이기)",
-    "p3": "오른다리꼬기",
-    "p4": "왼다리꼬기",
-    "p5": "오른쪽기대기",
-    "p6": "왼쪽기대기",
-    "p7": "앉지않음",
-}
+# 이름표는 서버와 같은 곳(norm_stats_64ch.json 의 label_names)에서 읽는다.
+from posture_names import load_display_names
+
+DISPLAY_NAMES = load_display_names()
 
 
 def run_simulator():

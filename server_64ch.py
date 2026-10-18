@@ -2,7 +2,7 @@
 server_64ch.py
 
 방석 32채널 + 등받이 32채널 = 64채널 데이터를 받아서
-1D-CNN으로 자세(p1~p7)를 판정하는 서버.
+1D-CNN으로 자세 8종(p0~p7, posture_names.py 참고)을 판정하는 서버.
 
 실행 전 준비물 (train_posture_cnn_64ch.py를 먼저 실행해서 생성):
 - posture_model_64ch.pt
@@ -22,6 +22,7 @@ from calibration import CalibrationSession, load_personal_stats
 from data_collector import RecordingSession
 from report import get_daily_report, get_weekly_report, get_streak
 from risk_tracker import RiskTracker
+from posture_names import load_display_names
 
 
 class PostureCNN64(nn.Module):
@@ -56,19 +57,14 @@ print(f"📊 64채널 정규화 통계 로드 완료 (mean/std shape: {SENSOR_ME
 print(f"📊 라벨 순서 ({NUM_CLASSES}종): {LABEL_CLASSES}")
 
 # =====================================================================
-# 표시용 이름 매핑 (임시 배정 - 데이터 근거 아님, 우리 프로젝트 계획서의
-# 7종 자세명을 순번대로 기계적으로 배정한 것. 실측 데이터 확보 후
-# 실제 라벨링으로 교체 예정)
+# 표시용 이름 매핑
+#    이름표는 학습할 때 norm_stats_64ch.json 에 같이 저장된다(label_names).
+#    모델과 이름표가 항상 같은 파일에서 나오므로, 모델을 8종으로 교체하면
+#    이름표도 같이 바뀐다. 아직 예전 7종 norm_stats 가 올라가 있으면
+#    posture_names.py 의 예전 이름표를 쓴다.
 # =====================================================================
-DISPLAY_NAMES = {
-    "p1": "정자세",
-    "p2": "거북목(앞으로 숙이기)",
-    "p3": "오른다리꼬기",
-    "p4": "왼다리꼬기",
-    "p5": "오른쪽기대기",
-    "p6": "왼쪽기대기",
-    "p7": "앉지않음",
-}
+DISPLAY_NAMES = load_display_names()
+print(f"🏷️ 자세 이름표: {DISPLAY_NAMES}")
 
 cnn_model = PostureCNN64(num_classes=NUM_CLASSES).to(device)
 
