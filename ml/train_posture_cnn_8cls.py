@@ -18,11 +18,19 @@ json 하나를 앱과 서버가 같이 쓴다:
                                     (model_io 는 export_tflite_8cls.py 가 채움)
   서버(server_64ch.py): sensor_cols_order, mean, std, label_classes, num_classes, label_names
 
+더미 섞기 (--dummy-dir): gen_dummy_64ch.py 로 만든 더미 CSV 를 학습에만 더한다.
+  · 평가(테스트)는 항상 실측만 쓴다.
+  · LOPO 에서 테스트할 사람의 녹화로 만든 더미(template_person)는 그 fold 학습에서 뺀다.
+    (안 빼면 테스트할 사람의 몸이 학습에 들어가 점수가 부풀려진다.)
+  · 정규화 mean/std 는 실측 학습 데이터로만 계산한다.
+
 실행 (저장소 루트에서):
     python ml/train_posture_cnn_8cls.py
+    python ml/train_posture_cnn_8cls.py --dummy-dir data/dummy_64ch_turtle   # 거북목 더미 섞기
 결과: ml/posture_model_8cls.pt, ml/norm_stats_8cls.json, ml/runs/8cls/ (혼동행렬 등)
 """
 
+import argparse
 import json
 import random
 import sys
@@ -87,6 +95,21 @@ def load_raw() -> pd.DataFrame:
     return df
 
 
+def load_dummy(dummy_dir: Path) -> pd.DataFrame:
+    """gen_dummy_64ch.py 결과. template_person(재료 녹화 주인)을 실측과 같은 규칙으로 정리한다."""
+    files = sorted(dummy_dir.rglob("*.csv"))
+    if not files:
+        raise SystemExit(f"{dummy_dir} 에 더미 CSV 가 없습니다.")
+    df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    if "template_person" not in df.columns:
+        raise SystemExit("더미 CSV 에 template_person 컬럼이 없습니다. gen_dummy_64ch.py 로 다시 만드세요.")
+    unknown = set(df["posture"]) - set(LABEL_ORDER)
+    if unknown:
+        raise SystemExit(f"더미에 LABEL_ORDER 에 없는 자세: {sorted(unknown)}")
+    df["template_person"] = df["template_person"].astype(str).str.replace(r"\d+$", "", regex=True)
+    return df
+
+
 def fit_norm(x_raw: np.ndarray):
     return x_raw.mean(axis=0), np.maximum(x_raw.std(axis=0), STD_FLOOR)
 
@@ -128,10 +151,15 @@ def confusion_of(y_true, y_pred) -> np.ndarray:
     return m
 
 
-def evaluate_fold(df: pd.DataFrame, test_person: str) -> dict:
+def evaluate_fold(df: pd.DataFrame, test_person: str, dummy: pd.DataFrame | None) -> dict:
     tr = df[df["person"] != test_person]
     te = df[df["person"] == test_person]
     mean, std = fit_norm(tr[CH_COLS].values.astype(np.float32))
+    n_dummy = 0
+    if dummy is not None:
+        dm = dummy[dummy["template_person"] != test_person]   # 테스트할 사람 녹화로 만든 더미는 뺀다
+        n_dummy = len(dm)
+        tr = pd.concat([tr, dm], ignore_index=True)
     xtr = to_input(tr[CH_COLS].values.astype(np.float32), mean, std)
     xte = to_input(te[CH_COLS].values.astype(np.float32), mean, std)
     ytr = tr["posture"].map(LABEL_TO_IDX).values
@@ -145,9 +173,10 @@ def evaluate_fold(df: pd.DataFrame, test_person: str) -> dict:
         per_class[name] = {"n": n, "recall": float(conf[k, k] / n)} if n else None
     return {
         "test_person": test_person,
-        "train_persons": sorted(tr["person"].unique()),
+        "train_persons": sorted(df[df["person"] != test_person]["person"].unique()),
         "train_missing": [c for c in LABEL_ORDER if c not in set(tr["posture"])],
         "n_train": int(len(tr)),
+        "n_train_dummy": int(n_dummy),
         "n_test": int(len(te)),
         "accuracy": float((pred == yte).mean()),
         "per_class": per_class,
@@ -190,11 +219,22 @@ def save_confusion(conf: np.ndarray, title: str, path_png: Path, path_csv: Path)
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dummy-dir", default="",
+                    help="학습에만 더할 더미 CSV 폴더 (gen_dummy_64ch.py 결과). 예: data/dummy_64ch_turtle")
+    args = ap.parse_args()
+
     random.seed(SEED)
     np.random.seed(SEED)
     RUN_DIR.mkdir(parents=True, exist_ok=True)
 
     df = load_raw()
+    dummy = None
+    if args.dummy_dir:
+        dummy_dir = (ROOT / args.dummy_dir).resolve()
+        dummy = load_dummy(dummy_dir)
+        print(f"더미(학습에만 사용): {len(dummy)}프레임 {dummy_dir.relative_to(ROOT)}  "
+              f"자세 {sorted(dummy['posture'].unique())}, 재료 {sorted(dummy['template_person'].unique())}")
     persons = sorted(df["person"].unique())
     n_files = len([f for f in RAW_DIR.glob("*.csv") if "_reject" not in f.stem])
     print(f"데이터: {len(df)}프레임, 사람 {persons}, 파일 {n_files}개")
@@ -209,11 +249,12 @@ def main():
     folds = []
     total_conf = np.zeros((N_CLS, N_CLS), dtype=int)
     for p in persons:
-        r = evaluate_fold(df, p)
+        r = evaluate_fold(df, p, dummy)
         folds.append(r)
         total_conf += np.array(r["confusion"])
+        dm_note = f", 그중 더미 {r['n_train_dummy']}" if dummy is not None else ""
         print(f"\n[테스트 {p} / 학습 {r['train_persons']}] 정확도 {r['accuracy'] * 100:.1f}% "
-              f"(학습 {r['n_train']} / 테스트 {r['n_test']})")
+              f"(학습 {r['n_train']}{dm_note} / 테스트 {r['n_test']})")
         if r["train_missing"]:
             print(f"   학습에 없는 자세: {r['train_missing']}")
         for name in LABEL_ORDER:
@@ -237,8 +278,10 @@ def main():
 
     # 최종 모델: 전체 인원으로 학습 (앱에 넘기는 용도)
     x_raw = df[CH_COLS].values.astype(np.float32)
-    mean, std = fit_norm(x_raw)
-    model = train(to_input(x_raw, mean, std), df["posture"].map(LABEL_TO_IDX).values)
+    mean, std = fit_norm(x_raw)               # 정규화는 실측으로만
+    full = df if dummy is None else pd.concat([df, dummy], ignore_index=True)
+    model = train(to_input(full[CH_COLS].values.astype(np.float32), mean, std),
+                  full["posture"].map(LABEL_TO_IDX).values)
     torch.save(model.state_dict(), OUT_PT)
 
     seat_cols = [f"seat_{i + 1}" for i in range(32)]   # 서버 컬럼명: seat_1 = ch0 ... seat_32 = ch31
@@ -263,6 +306,13 @@ def main():
         "num_classes": N_CLS,
         "trained_on_persons": persons,
         "classes_without_data": missing,
+        "dummy_in_training": None if dummy is None else {
+            "dir": args.dummy_dir,
+            "frames": int(len(dummy)),
+            "postures": sorted(dummy["posture"].unique()),
+            "template_persons": sorted(dummy["template_person"].unique()),
+            "rule": "학습에만 사용. LOPO 에서는 테스트할 사람 녹화로 만든 더미 제외. 평가와 정규화는 실측만.",
+        },
         "person_split_eval": {
             "method": "leave-one-person-out",
             "mean_accuracy": mean_acc,

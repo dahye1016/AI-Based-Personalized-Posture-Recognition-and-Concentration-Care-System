@@ -38,6 +38,17 @@ python ml/export_tflite_8cls.py         # TFLite 변환 + 앱 입력/출력 shap
 - 2026-10-22 결과
   - 4명 28파일 (아로 3자세·다혜 앉지않음 미수집): LOPO 평균 55.9%
   - + 아로 1022 재측정 8파일 (feat/aro) = 36파일: LOPO 평균 **64.3%**. 약한 자세: 거북목 29%, 정자세 36%, 오른다리 꼬기 58%
+  - 거북목 불량 정리 (등받이에 등이 안 닿음): `aro_turtle_neck_1` 삭제, `junseo_turtle_neck_2` → `_reject` = 34파일:
+    LOPO 평균 **62.5%**. 거북목 1.4% (정상 녹화가 3명뿐이라 사람이 바뀌면 못 맞힘), 정자세 59.6%
+
+## 8자세 더미 데이터 (거북목 포함)
+`data/dummy/chair_64ch_posture_data_dummy.csv.gz` = 예전 7자세 더미 + 거북목 더미 (2026-10-22).
+예전 더미는 라벨(p7=앉지않음 → p0)과 좌석 좌우(뒤집기 전 → 뒤집은 뒤)를 지금 기준으로 바꿔서 합쳤다.
+```
+python gen_dummy_64ch.py --postures turtle_neck --persons 40 --trials 2 --out <임시폴더>
+python ml/merge_dummy_8cls.py --turtle-dir <임시폴더> --old <예전 7자세 csv.gz>
+```
+거북목 더미 재료는 정상 거북목 실측(아로1022·다혜·예원)뿐이다. 더미 성적은 성과로 쓰지 말 것.
 
 ## 1. 수집 (센서 도착 후)
 ```

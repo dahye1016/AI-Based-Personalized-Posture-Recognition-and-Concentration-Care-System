@@ -136,7 +136,9 @@ def load_templates(tdir):
             continue
         if p == "not_sitting" and m[:32].sum() > 300:
             continue
-        T[p].append(X)
+        # 재료가 누구 녹화인지 남긴다 (실측 학습에 섞을 때, 테스트할 사람의 녹화로 만든 더미를 빼기 위해)
+        src = str(d["person"].iloc[0]) if "person" in d.columns else os.path.basename(f)
+        T[p].append((X, src))
     return T
 
 
@@ -153,7 +155,7 @@ def make_person(i, rng):
 
 def synth(posture, tpl, P, rng):
     n = int(rng.integers(1244, 1345))
-    src = tpl[rng.integers(len(tpl))]
+    src, src_person = tpl[rng.integers(len(tpl))]
     # 길이 맞춰 다시 뽑기(시간 순서 유지)
     idx = np.clip(np.round(np.linspace(0, len(src) - 1, n)).astype(int), 0, len(src) - 1)
     Xs = src[idx]
@@ -177,7 +179,7 @@ def synth(posture, tpl, P, rng):
         X[:] = 0
     X = np.clip(np.round(X), 0, MAXV)
     X[X < 3] = 0
-    return X
+    return X, src_person
 
 
 def main():
@@ -189,31 +191,37 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--xlsx", default=None, help="'실측_참가자섭외_합격기준_64ch.xlsx' (있으면 수치표를 읽어 기준으로 씀)")
     ap.add_argument("--fps", type=float, default=62.3)
+    ap.add_argument("--postures", default="",
+                    help="이 자세만 만든다 (쉼표로 여러 개). 예: turtle_neck. 비우면 8자세 전부")
     a = ap.parse_args()
     if a.xlsx:
         load_xlsx_criteria(a.xlsx)
+    targets = [p.strip() for p in a.postures.split(",") if p.strip()] or POSTURES
+    bad = [p for p in targets if p not in POSTURES]
+    if bad:
+        sys.exit(f"알 수 없는 자세: {bad}")
     rng = np.random.default_rng(a.seed)
     T = load_templates(a.templates)
-    need = [p for p in POSTURES if p != "not_sitting" and not T[p]]
-    for p in POSTURES:
-        print(f"재료 {p:17s} {len(T[p])}개")
+    need = [p for p in targets if p != "not_sitting" and not T[p]]
+    for p in targets:
+        print(f"재료 {p:17s} {len(T[p])}개  ({', '.join(sorted({s for _, s in T[p]}))})")
     if need:
         sys.exit(f"재료가 없는 자세: {need}  (--templates 폴더에 해당 실측 CSV 가 필요)")
     if not T["not_sitting"]:
-        T["not_sitting"] = [np.zeros((1300, 64))]
+        T["not_sitting"] = [(np.zeros((1300, 64)), "none")]
 
     rows, made, fail = [], 0, 0
     t0 = 1.79e9
     persons = [make_person(i + 1, rng) for i in range(a.persons)]
     for P in persons:
-        for post in POSTURES:
+        for post in targets:
             os.makedirs(os.path.join(a.out, post), exist_ok=True)
             for tr in range(1, a.trials + 1):
                 ok = False
                 for att in range(120):                           # 기준 불통과면 다시 만든다
                     Pq = P if att < 60 else dict(P, lr=0.0, ch_jit=np.ones(64),  # 계속 실패하면 습관을 줄여서
                                                  body=max(P["body"], 1.0), back_gain=1.0)
-                    X = synth(post, T[post], Pq, rng)
+                    X, src_person = synth(post, T[post], Pq, rng)
                     n = len(X)
                     M = metrics(X, n / a.fps, n)
                     if passes(post, M):
@@ -227,9 +235,11 @@ def main():
                 df.insert(0, "timestamp", ts)
                 df.insert(0, "frame", np.arange(n))
                 df["person"], df["posture"], df["trial"] = P["id"], post, tr
+                df["template_person"] = src_person
                 name = f"{P['id']}_{post}_{tr}.csv"
                 df.to_csv(os.path.join(a.out, post, name), index=False)
                 rows.append(dict(file=name, person=P["id"], case=P["case"], posture=post, trial=tr,
+                                 template_person=src_person,
                                  body=round(P["body"], 3), frames=n,
                                  seat_total=round(M["seat_total"]), back_total=round(M["back_total"])))
                 made += 1
@@ -242,10 +252,13 @@ def main():
     lf = man[man.posture == "lean_forward"].back_total
     tn = man[man.posture == "turtle_neck"].back_total
     print(f"\n생성 {made}파일 (기준 불통과로 포기 {fail}), 가상 참가자 {len(persons)}명 -> {a.out}")
-    print(man.groupby("posture").size().to_string())
-    print(f"앞으로 숙이기 등받이 총압력: 최대 {lf.max():.0f} (기준 100 이하)")
-    print(f"거북목 등받이 총압력: 최소 {tn.min():.0f} (기준 400 이상)")
-    assert lf.max() <= 100 and tn.min() >= 400, "거북목/앞으로 숙이기 분리가 깨졌습니다"
+    print(man.groupby(["posture", "template_person"]).size().to_string())
+    if len(lf):
+        print(f"앞으로 숙이기 등받이 총압력: 최대 {lf.max():.0f} (기준 100 이하)")
+        assert lf.max() <= 100, "앞으로 숙이기 등받이가 0 이 아닙니다"
+    if len(tn):
+        print(f"거북목 등받이 총압력: 최소 {tn.min():.0f} (기준 400 이상)")
+        assert tn.min() >= 400, "거북목 등받이가 너무 약합니다"
     print("확인 완료: 거북목은 등이 닿고, 앞으로 숙이기는 등받이 0 — 겹치지 않음")
     print("\n다음: python -m ml.prepare_chair_data --source csvdir --csv-dir data\\dummy_64ch "
           "--out chair_64ch_posture_data_dummy.csv")
