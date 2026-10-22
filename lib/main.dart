@@ -8,8 +8,8 @@ import 'screens/onboarding_screen.dart';
 import 'screens/report_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/stretch_screen.dart';
-import 'services/fallback_sensor_source.dart';
-import 'services/sensor_source.dart';
+import 'services/api_service.dart';
+import 'services/ble_service.dart';
 import 'theme/app_theme.dart';
 
 void main() => runApp(const PostureCareApp());
@@ -30,17 +30,10 @@ class PostureCareApp extends StatelessWidget {
 
 /// 앱 진입 흐름 — 스플래시 → 로그인 → 온보딩 → 정자세 측정 → 메인 탭.
 ///
-/// 데이터 입구([SensorSource])를 여기서 한 번만 만들어 아래로 내려준다.
-///
-/// 기본은 **진짜 BLE 만** 쓴다. 방석에 못 붙으면 데이터가 아예 안 흐르고,
-/// 실패 지점은 콘솔의 `[BLE]` / `[SOURCE]` 로그에 그대로 남는다.
-/// (가짜 데이터가 몰래 흘러서 "연동된 것처럼" 보이는 걸 막기 위함)
-///
-/// ```bash
-/// flutter run                                    # 진짜 BLE 만 (기본)
-/// flutter run --dart-define=MOCK_FALLBACK=true   # 방석 못 찾으면 가짜로 폴백
-/// flutter run --dart-define=USE_BLE=false        # 처음부터 가짜만 (시뮬레이터용)
-/// ```
+/// 정자세 측정 단계에서만 쓰는 [BleService] 를 여기서 만들고,
+/// 메인으로 넘어갈 때 끊는다. 실시간 화면([HomeScreen])은 자기 BleService 를
+/// 따로 갖고 있어서, 두 연결이 같은 방석을 두고 경합하지 않게 하기 위함.
+/// BLE 가 없는 환경(시뮬레이터)에서는 측정 단계에 데이터가 들어오지 않는다.
 class AppFlow extends StatefulWidget {
   const AppFlow({super.key});
 
@@ -51,33 +44,30 @@ class AppFlow extends StatefulWidget {
 enum _Phase { splash, login, onboarding, calibration, main }
 
 class _AppFlowState extends State<AppFlow> {
-  static const bool _useBle =
-      bool.fromEnvironment('USE_BLE', defaultValue: true);
-
-  late final SensorSource _source;
+  /// 정자세 측정용 연결. 메인 진입 시 해제되어 null 이 된다.
+  BleService? _calibBle;
   _Phase _phase = _Phase.splash;
 
   @override
-  void initState() {
-    super.initState();
-    if (_useBle) {
-      // 방석에 붙는다. 가짜 소스 폴백은 기본으로 꺼져 있고,
-      // --dart-define=MOCK_FALLBACK=true 일 때만 켜진다.
-      final s = FallbackSensorSource();
-      _source = s;
-      s.start();
-    } else {
-      _source = MockSensorSource();
-    }
-  }
-
-  @override
   void dispose() {
-    _source.dispose();
+    _releaseCalibBle();
     super.dispose();
   }
 
-  void _go(_Phase next) => setState(() => _phase = next);
+  void _releaseCalibBle() {
+    final ble = _calibBle;
+    _calibBle = null;
+    ble?.dispose();
+  }
+
+  void _go(_Phase next) {
+    if (next == _Phase.calibration && _calibBle == null) {
+      _calibBle = BleService()..connect();
+    } else if (next == _Phase.main) {
+      _releaseCalibBle();
+    }
+    setState(() => _phase = next);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,10 +84,10 @@ class _AppFlowState extends State<AppFlow> {
           onStart: () => _go(_Phase.calibration),
         ),
       _Phase.calibration => CalibrationScreen(
-          source: _source,
+          ble: _calibBle!,
           onDone: (_) => _go(_Phase.main),
         ),
-      _Phase.main => RootNav(source: _source),
+      _Phase.main => const RootNav(),
     };
   }
 }
@@ -105,27 +95,28 @@ class _AppFlowState extends State<AppFlow> {
 /// 하단 탭 — 피그마 TabBar 컴포넌트와 동일하게 4개.
 /// 실시간 / 리포트 / 챌린지 / 스트레칭
 class RootNav extends StatefulWidget {
-  const RootNav({super.key, this.source});
-
-  final SensorSource? source;
+  const RootNav({super.key});
 
   @override
   State<RootNav> createState() => _RootNavState();
 }
 
 class _RootNavState extends State<RootNav> {
+  final ApiService _api = ApiService();
   int _index = 0;
 
   late final List<Widget> _pages = [
-    HomeScreen(
-      source: widget.source,
-      // 정자세 카드의 '오늘 리포트 보기' → 리포트 탭으로 전환
-      onOpenReport: () => setState(() => _index = 1),
-    ),
+    HomeScreen(api: _api),
     const ReportScreen(),
     const ChallengeScreen(),
     const StretchScreen(),
   ];
+
+  @override
+  void dispose() {
+    _api.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

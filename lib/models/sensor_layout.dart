@@ -13,6 +13,13 @@ import 'dart:ui' show Offset;
 ///
 /// 실측 확정 2026-08-09 — 실기기 BLE 수신 상태에서
 /// 채널 번호를 화면에 표시하고 각 부위를 직접 눌러 확인함
+///
+/// 등받이 매트 (ch32~63, 2기기 연결 시 등받이 보드의 ch0~31 이 여기에 대응):
+///   좌석과 같은 10/14/8 구조 — 허리 줄 32~41 / 중간 줄 42~55 / 어깨 줄 56~63.
+///   ★ 좌우 방향이 좌석과 반대다 (매트를 세워서 쓰기 때문).
+///     · 좌석  : 번호가 작을수록 사용자의 오른쪽 (ch0~4 = 오른 엉덩이)
+///     · 등받이: 번호가 클수록 사용자의 오른쪽 (ch61~63 = 오른 어깨)
+///   실측 근거: 왼 어깨 ch56~58 / 오른 어깨 ch61~63 / 오른 허리 ch37~41.
 class SensorLayout {
   SensorLayout._();
 
@@ -42,6 +49,47 @@ class SensorLayout {
   // 좌우별 (부위 합침) — 사람 기준
   static const List<int> rightCh = [...hipRight, ...thighRight, ...kneeRight];
   static const List<int> leftCh = [...hipLeft, ...thighLeft, ...kneeLeft];
+
+  // ── 등받이 채널 그룹 (ch32~63) ────────────────────────────────────
+  // ★★ 좌석과 좌우가 반대다. 각 행에서 번호 증가 = 사용자의 왼쪽 → 오른쪽.
+  //    (좌석은 번호 증가 = 오른쪽 → 왼쪽.) 매트를 세워서 달았기 때문.
+  // 실측: 왼 어깨 ch56~58, 오른 어깨 ch61~63, 오른 허리 ch37~41.
+  // 추정: 중간 줄 좌우 경계(48|49), ch59(왼), ch60(오른) — 다음 실측 때 확정.
+  //
+  // nChannels(32) 는 좌석 전용으로 그대로 둔다 (BLE 파싱·홈 화면이 32 전제).
+  static const int backFirstCh = 32; // 등받이 보드 ch0 -> 64ch 프레임의 ch32
+  static const int nBackChannels = 32;
+  static const int nAllChannels = 64; // 좌석 + 등받이 (2기기 연결)
+
+  static const List<int> backWaistLeft = [32, 33, 34, 35, 36]; // 왼쪽 허리
+  static const List<int> backWaistRight = [37, 38, 39, 40, 41]; // 오른쪽 허리 (실측)
+  static const List<int> backMidLeft = [42, 43, 44, 45, 46, 47, 48]; // 왼쪽 중간 (추정)
+  static const List<int> backMidRight = [49, 50, 51, 52, 53, 54, 55]; // 오른쪽 중간 (추정)
+  static const List<int> backShoulderLeft = [56, 57, 58, 59]; // 왼쪽 어깨 (59 추정)
+  static const List<int> backShoulderRight = [60, 61, 62, 63]; // 오른쪽 어깨 (60 추정)
+
+  // 부위별 (좌우 합침)
+  static const List<int> backWaistCh = [...backWaistLeft, ...backWaistRight]; // 32~41
+  static const List<int> backMidCh = [...backMidLeft, ...backMidRight]; // 42~55
+  static const List<int> backShoulderCh = [
+    ...backShoulderLeft,
+    ...backShoulderRight,
+  ]; // 56~63
+
+  // 좌우별 (부위 합침) — 사람 기준
+  static const List<int> backLeftCh = [
+    ...backWaistLeft,
+    ...backMidLeft,
+    ...backShoulderLeft,
+  ];
+  static const List<int> backRightCh = [
+    ...backWaistRight,
+    ...backMidRight,
+    ...backShoulderRight,
+  ];
+
+  // 등받이 전체
+  static const List<int> backCh = [...backWaistCh, ...backMidCh, ...backShoulderCh];
 
   // 노드 1개가 대표하는 면적 (cm²) — 접촉 면적 계산용 근사값
   static const double nodeAreaCm2 =
@@ -82,6 +130,7 @@ class SensorLayout {
     // 검증: 0~31 이 중복·누락 없이 정확히 한 번씩, 좌표 개수 32.
     assert(_isComplete(), '채널 그룹에 중복/누락이 있습니다');
     assert(pos.length == nChannels, '좌표 개수가 $nChannels 이 아닙니다');
+    assert(_isBackComplete(), '등받이 채널 그룹에 중복/누락이 있습니다');
     return pos;
   }
 
@@ -94,5 +143,16 @@ class SensorLayout {
         all.toSet().containsAll(expected);
     return covers([...hipCh, ...thighCh, ...kneeCh]) &&
         covers([...rightCh, ...leftCh]);
+  }
+
+  /// 등받이 부위별·좌우별 두 분할 모두 32~63 을 정확히 한 번씩 덮는지 검증.
+  static bool _isBackComplete() {
+    final expected =
+        List<int>.generate(nBackChannels, (i) => backFirstCh + i).toSet();
+    bool covers(List<int> all) =>
+        all.length == nBackChannels &&
+        all.toSet().length == nBackChannels &&
+        all.toSet().containsAll(expected);
+    return covers(backCh) && covers([...backLeftCh, ...backRightCh]);
   }
 }

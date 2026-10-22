@@ -6,7 +6,7 @@
   Serial(2,000,000) 출력은 그대로 유지 — 디버그 및 안전망.
 
   BLE:
-    Local Name : Cushion-MDEX
+    Local Name : PoseLab-Seat / PoseLab-Back  (부팅 시 DIP SW1 로 결정, ON = Back)
     Service    : 180A
     TX Char    : 2A98  (Notify, 66 bytes)
     Payload    : [0..1] frame_no(uint16 LE) + [2..65] ch0..ch31(uint16 LE)
@@ -23,7 +23,12 @@
 #define FRAME_MS        20     // 20 ms = 50 fps
 
 // ── BLE 설정 ────────────────────────────────────────────────
-#define BLE_NAME        "Cushion-MDEX"
+// 같은 펌웨어를 두 보드에 올리고, 부팅 시 DIP SW1 로 좌석/등받이를 정한다.
+//   SW1 OFF = 좌석 (PoseLab-Seat), SW1 ON = 등받이 (PoseLab-Back). SW2 는 예약.
+#define BLE_NAME_SEAT   "PoseLab-Seat"
+#define BLE_NAME_BACK   "PoseLab-Back"
+// 비상용: DIP 스위치가 없거나 불량인 보드에만 주석을 풀고 올린다 (SW1 무시, 항상 Back).
+// #define BOARD_ROLE_FORCE_BACK
 #define SERVICE_UUID    "180A"
 #define TX_CHAR_UUID    "2A98"
 #define NOTIFY_DIVIDER  5      // 50fps / 5 = 10 Hz
@@ -37,6 +42,7 @@ static bool     deviceConnected = false;
 static uint16_t frameNo         = 0;
 static uint8_t  notifyCounter   = 0;
 static uint8_t  payload[PAYLOAD_SIZE];
+static const char* bleName      = BLE_NAME_SEAT;   // setup() 에서 DIP 로 확정
 
 class ServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* s, NimBLEConnInfo& info) override {
@@ -56,7 +62,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 };
 
 void setup_ble() {
-  NimBLEDevice::init(BLE_NAME);
+  NimBLEDevice::init(bleName);
   NimBLEDevice::setMTU(517);                  // 66바이트 페이로드에 필요
 
   pServer = NimBLEDevice::createServer();
@@ -70,12 +76,12 @@ void setup_ble() {
 
   NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
   pAdv->addServiceUUID(SERVICE_UUID);
-  pAdv->setName(BLE_NAME);
+  pAdv->setName(bleName);
   pAdv->enableScanResponse(true);
   NimBLEDevice::startAdvertising();
 
   Serial.printf("BLE ADVERTISING : name=%s  svc=%s  char=%s\n",
-                BLE_NAME, SERVICE_UUID, TX_CHAR_UUID);
+                bleName, SERVICE_UUID, TX_CHAR_UUID);
 }
 
 void setup() {
@@ -97,6 +103,18 @@ void setup() {
   dip_init();
   Serial.printf("DIP switch : SW1=%s  SW2=%s\n",
                 dip_sw1() ? "ON" : "OFF", dip_sw2() ? "ON" : "OFF");
+
+  // 좌석/등받이 결정 — setup_ble() 보다 먼저 해야 광고 이름에 반영된다.
+#ifdef BOARD_ROLE_FORCE_BACK
+  const bool isBack = true;
+  const char* roleSrc = "FORCE_BACK (compile)";
+#else
+  const bool isBack = dip_sw1();
+  const char* roleSrc = "DIP SW1";
+#endif
+  bleName = isBack ? BLE_NAME_BACK : BLE_NAME_SEAT;
+  Serial.printf("Role       : %s (%s) via %s\n",
+                isBack ? "BACK" : "SEAT", bleName, roleSrc);
 
   Serial.printf("SETUP-HW PINS \n");
   setup_gpioWork();

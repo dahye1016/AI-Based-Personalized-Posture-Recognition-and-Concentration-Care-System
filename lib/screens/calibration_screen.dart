@@ -2,15 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../services/posture_layout.dart';
-import '../services/sensor_source.dart';
+import '../models/sensor_layout.dart';
+import '../services/ble_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
 
 /// 정자세 측정(캘리브레이션) — 피그마 「01 측정 안내 / 02 측정 중 / 03 측정 완료」.
 ///
 /// 한 화면 안에서 3단계로 진행한다.
-/// 측정 중에는 [SensorSource] 프레임을 모아 채널별 최대·평균을 계산하고,
+/// 측정 중에는 [BleService] 프레임을 모아 채널별 최대·평균을 계산하고,
 /// 총압력이 크게 출렁이면 '흔들림'으로 센다.
 ///
 /// 결과는 아직 서버로 보내지 않는다. 이 브랜치에는 캘리브레이션 API
@@ -18,12 +18,13 @@ import '../widgets/bm.dart';
 class CalibrationScreen extends StatefulWidget {
   const CalibrationScreen({
     super.key,
-    required this.source,
+    required this.ble,
     this.duration = const Duration(seconds: 10),
     this.onDone,
   });
 
-  final SensorSource source;
+  /// 측정용 BLE 연결. 연결·해제는 호출한 쪽(AppFlow)이 맡는다.
+  final BleService ble;
 
   /// 측정 시간. 기획상 5~10초.
   final Duration duration;
@@ -54,6 +55,13 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   bool _stable = true;
   CalibrationResult? _result;
 
+  /// 측정에 쓰는 좌석 채널 (ch0~31). ch31 도 왼쪽 무릎 실채널이다.
+  static const List<int> _seatCh = [
+    ...SensorLayout.hipCh,
+    ...SensorLayout.thighCh,
+    ...SensorLayout.kneeCh,
+  ];
+
   static const _minFrames = 10;
   static const _tolerance = 0.15;
   static const _maxUnstableRatio = 0.3;
@@ -72,9 +80,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   void _start() {
-    _max = List<int>.filled(PostureLayout.channels, 0);
-    _sum = List<double>.filled(PostureLayout.channels, 0);
-    _levels = List<double>.filled(PostureLayout.channels, 0);
+    _max = List<int>.filled(SensorLayout.nChannels, 0);
+    _sum = List<double>.filled(SensorLayout.nChannels, 0);
+    _levels = List<double>.filled(SensorLayout.nChannels, 0);
     _frames = 0;
     _unstable = 0;
     _baseTotal = null;
@@ -85,7 +93,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     setState(() => _step = _Step.measuring);
 
     _watch = Stopwatch()..start();
-    _sub = widget.source.frames().listen(_onFrame);
+    _sub = widget.ble.frames.map((f) => f.channels).listen(_onFrame);
     _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
       if (!mounted) return;
       if (_watch!.elapsed >= widget.duration) {
@@ -100,16 +108,15 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     if (_step != _Step.measuring) return;
 
     var total = 0.0;
-    final levels = List<double>.filled(PostureLayout.channels, 0);
+    final levels = List<double>.filled(SensorLayout.nChannels, 0);
 
-    // ch31 은 센서값이 아니라 더미다. 총압·최대값·개인 기준값 어디에도
-    // 넣지 않는다. (넣으면 더미값이 정규화를 지배해 실채널이 전부
-    // 차갑게 보이고, 흔들림 판정의 기준 총압도 함께 어긋난다.)
+    // 좌석 32채널(ch0~31) 전부를 총압·최대값·개인 기준값에 넣는다.
+    // 채널 배치는 sensor_layout 기준 (ch31 = 왼쪽 무릎 실채널).
     var maxV = 1;
-    for (final i in PostureLayout.all) {
+    for (final i in _seatCh) {
       if (i < ch.length && ch[i] > maxV) maxV = ch[i];
     }
-    for (final i in PostureLayout.all) {
+    for (final i in _seatCh) {
       if (i >= ch.length) continue;
       final v = ch[i];
       if (v > _max[i]) _max[i] = v;
