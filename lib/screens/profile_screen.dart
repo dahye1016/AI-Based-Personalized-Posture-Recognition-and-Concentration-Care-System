@@ -3,7 +3,6 @@ import '../theme/app_theme.dart';
 import '../models/mock_data.dart';
 import '../widgets/common.dart';
 import '../widgets/tiles.dart';
-import 'calibration_screen.dart';
 
 /// 내 정보 — 프로필 / 기기 연결 / 알림 설정
 class ProfileScreen extends StatefulWidget {
@@ -88,13 +87,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 24),
 
-          ListActionTile(
-            icon: Icons.tune,
-            label: '바른 자세 측정 (재보정)',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const CalibrationScreen()),
-            ),
-          ),
+          // 재보정은 BLE 연결 소유 정리 후 다시 연결한다 (지금은 비활성).
+          const ListActionTile(icon: Icons.tune, label: '바른 자세 측정 (재보정)'),
           const SizedBox(height: 10),
           const ListActionTile(
               icon: Icons.file_download_outlined, label: '데이터 내보내기'),
