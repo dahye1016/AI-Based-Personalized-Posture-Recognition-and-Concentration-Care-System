@@ -7,19 +7,43 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/sensor_frame.dart';
 import '../models/sensor_layout.dart';
 
-/// 방석센서(Cushion-MDEX) BLE 수신 서비스.
+/// PoseLab 보드의 역할. 같은 펌웨어를 두 보드에 올리고 부팅 시 DIP SW1 로 정한다.
+/// 광고 이름은 펌웨어 `BLE_NAME_SEAT` / `BLE_NAME_BACK` 과 철자가 같아야 한다.
+enum BleBoard {
+  /// 좌석 (SW1 OFF).
+  seat('PoseLab-Seat'),
+
+  /// 등받이 (SW1 ON).
+  back('PoseLab-Back');
+
+  const BleBoard(this.advName);
+
+  /// BLE 광고 이름.
+  final String advName;
+
+  /// 광고 이름 -> 보드 역할. PoseLab 보드가 아니면 null.
+  static BleBoard? fromName(String name) {
+    for (final b in values) {
+      if (b.advName == name) return b;
+    }
+    return null;
+  }
+}
+
+/// 방석센서(PoseLab) BLE 수신 서비스.
 ///
 /// 책임 범위: 스캔 → 연결 → MTU 협상 → Notify 구독 → 66byte 프레임 파싱까지.
 /// ★ 원시값을 서버로 보내지 않는다. 파싱한 [SensorFrame] 을 [frames] 스트림으로만
 ///   흘려보내고, 자세 판정은 앱(온디바이스)이 이 스트림을 구독해서 한다.
 ///
 /// 펌웨어 스펙 (firmware/PoseLabCore_BLE):
-///   - 기기명 Cushion-MDEX / Service 180A / TX char 2A98 (Notify) / 10Hz
+///   - 기기명 PoseLab-Seat / PoseLab-Back ([BleBoard], DIP SW1) / Service 180A /
+///     TX char 2A98 (Notify) / 10Hz
+///   - 지금은 좌석([BleBoard.seat]) 1대만 연결한다. 2기기 동시 연결은 다음 작업.
 ///   - 페이로드 66byte = frame_no(uint16 LE) + ch0~31(각 uint16 LE)
 ///   - 66byte 수신하려면 MTU >= 69 (페이로드 66 + ATT 헤더 3)
 class BleService {
   // ── 펌웨어 스펙 상수 ──────────────────────────────────────────────
-  static const String _deviceName = 'Cushion-MDEX';
   static const String _service16 = '180a';
   static const String _char16 = '2a98';
   // NOTE: 진단을 위해 스캔 필터(withServices)를 제거함 → Service Guid 상수도 잠시 미사용.
@@ -139,7 +163,10 @@ class BleService {
               'services=${uuids.map((g) => g.str).toList()} rssi=${r.rssi}');
         }
 
-        final nameOk = name == _deviceName;
+        final nameOk = BleBoard.fromName(name) == BleBoard.seat;
+        // TODO(버그): 180A 는 표준 Device Information 서비스라 다른 기기도 광고하고,
+        // 좌석·등받이 보드도 같은 UUID 라서 uuidOk 만으로 통과하면 엉뚱한 기기나
+        // 등받이를 좌석으로 연결할 수 있다. 2기기 연결 작업에서 조건을 고친다.
         final uuidOk = uuids.any((g) => _sameUuid(g, _service16));
         if (nameOk || uuidOk) {
           hit = r;
