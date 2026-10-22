@@ -1,17 +1,21 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/posture.dart';
 import '../services/api_service.dart';
 import '../services/ble_service.dart';
+import '../models/posture_alert.dart';
 import '../models/posture_class.dart';
 import '../models/sensor_frame.dart';
 import '../models/sensor_layout.dart';
+import '../services/alert_store.dart';
 import '../services/posture_model.dart';
 import '../services/sitting_stats.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
 import '../widgets/seat_heatmap.dart';
 import 'alert_history_screen.dart';
+import 'posture_alert_screen.dart';
 import 'settings_screen.dart';
 import 'stretch_screen.dart';
 
@@ -47,6 +51,26 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 모델 로드 실패 원인. null 이면 정상.
   String? _modelError;
 
+  // ── 나쁜 자세 알림 (기준 시간: [PostureAlertScreen.threshold]) ─────
+  /// 프레임이 이보다 오래 끊겼다 다시 들어오면 지속 시간을 처음부터 잰다.
+  /// (끊긴 동안의 자세는 모르므로 공백을 '유지'로 치지 않는다.)
+  static const Duration _frameGapReset = Duration(milliseconds: 2000);
+
+  /// 지금 이어지고 있는 나쁜 자세의 종류. 자세가 바뀌면 시간을 다시 잰다.
+  PostureClass? _badPosture;
+
+  /// 나쁜 자세가 이어지기 시작한 시각 (프레임 수신 시각 기준).
+  DateTime? _badSince;
+
+  /// 이 에피소드에 대해 이미 알림을 띄웠는지 (자세 이름으로 구분).
+  PostureClass? _alertedFor;
+
+  /// 알림 화면이 떠 있는 동안 중복으로 띄우지 않기 위한 잠금.
+  bool _alertOpen = false;
+
+  /// 오늘 몇 번째 알림인지. 보관 한도(4건)와 무관하게 계속 센다.
+  int _todayAlerts = 0;
+
   @override
   void initState() {
     super.initState();
@@ -81,12 +105,68 @@ class _HomeScreenState extends State<HomeScreen> {
     _recvTimes.add(now);
     _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
     if (!mounted) return;
+    final prevAt = _lastFrame?.receivedAt;
+    if (prevAt != null && now.difference(prevAt) > _frameGapReset) _resetBad();
     final p = _model?.predict(f);
     if (p != null) SittingStats.instance.record(p, f.receivedAt);
     setState(() {
       _lastFrame = f;
       _fps = _recvTimes.length.toDouble();
       if (p != null) _posture = p;
+    });
+    // predict 가 null 인 프레임(채널 수 불일치·모델 미로드)은 판정이 없으므로
+    // 알림 타이머를 건드리지 않는다.
+    if (p != null) _trackBad(p, now);
+  }
+
+  /// 나쁜 자세 지속 시간을 잰다. 나쁜 자세가 새로 시작되거나 다른 나쁜
+  /// 자세로 바뀌면 처음부터 다시 재고 진동한다 (REQ-F-05).
+  void _trackBad(PostureClass p, DateTime at) {
+    if (!p.isBad) {
+      _resetBad();
+      return;
+    }
+    if (_badPosture != p) {
+      _badPosture = p;
+      _badSince = at;
+      HapticFeedback.mediumImpact();
+    }
+    _maybeAlert(p, at);
+  }
+
+  void _resetBad() {
+    _badPosture = null;
+    _badSince = null;
+    _alertedFor = null;
+  }
+
+  /// 같은 나쁜 자세가 [PostureAlertScreen.threshold] 넘게 이어지면
+  /// 알림 화면을 띄우고 기록으로 남긴다. 기록은 최근 4건만 보관된다(AlertStore).
+  void _maybeAlert(PostureClass p, DateTime at) {
+    final since = _badSince;
+    if (since == null) return;
+    if (_alertedFor == p) return; // 이 에피소드는 이미 알렸다
+
+    final held = at.difference(since);
+    if (held < PostureAlertScreen.threshold) return;
+
+    _alertedFor = p;
+    _todayAlerts++;
+
+    final alert = PostureAlert(posture: p, heldFor: held, at: at);
+    AlertStore.instance.add(alert);
+
+    if (!mounted || _alertOpen) return;
+    _alertOpen = true;
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+          builder: (_) => PostureAlertScreen(
+            alert: alert,
+            todayCount: _todayAlerts,
+          ),
+        ))
+        .then((_) {
+      if (mounted) _alertOpen = false;
     });
   }
 
@@ -105,6 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await _ble.disconnect();
       // 다시 붙었을 때 끊기기 직전 판정이 다수결에 남지 않게 한다.
       _model?.reset();
+      _resetBad(); // 끊긴 동안의 자세는 모르므로 다시 붙으면 처음부터 잰다.
       setState(() {
         _bleConnected = false;
         _posture = null;
