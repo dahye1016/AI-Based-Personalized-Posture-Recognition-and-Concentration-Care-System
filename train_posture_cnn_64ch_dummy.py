@@ -39,7 +39,7 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.model_selection import train_test_split
 
-from posture_names import CODES, NEW_NAMES
+from posture_names import CODES, NEW_NAMES, POSTURE_ORDER
 
 NUM_CLASSES = len(CODES)  # 8
 STD_FLOOR = 1.0
@@ -236,6 +236,8 @@ def main():
         "mean": sensor_mean.tolist(),
         "std": sensor_std.tolist(),
         "label_classes": list(CODES),
+        "label_order": list(POSTURE_ORDER),   # 앱(PosturePreprocessor)이 읽는 키
+        "class_index": {name: i for i, name in enumerate(POSTURE_ORDER)},
         "label_names": dict(NEW_NAMES),
         "num_classes": NUM_CLASSES,
         "test_accuracy": accuracy,

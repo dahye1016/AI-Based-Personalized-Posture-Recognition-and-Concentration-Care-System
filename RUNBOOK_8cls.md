@@ -21,6 +21,24 @@ PowerShell 기준. 모든 명령은 `C:\Users\jungd\posture-64ch` 에서 실행�
 서버는 예전 7종 모델 그대로 켜집니다. 수정된 서버·리포트·시뮬레이터는 norm_stats 에
 `label_names` 가 없으면 예전 이름표를 쓰도록 되어 있어서, 새 모델로 교체하기 전에는 동작이 같습니다.
 
+## ★ 실측 학습 — 지금 쓰는 경로 (2026-10-22)
+`data/raw_64ch/` (ml/collect_data.py --port-back 으로 모은 64ch CSV) 를 바로 읽는다. 아래 1~3단계(collect_back / prepare_chair_data) 없이 된다.
+저장소 루트에서:
+```
+python ml/train_posture_cnn_8cls.py     # 사람 단위 평가(LOPO) + 혼동행렬 + 전체 인원으로 최종 학습
+python ml/export_tflite_8cls.py         # TFLite 변환 + 앱 입력/출력 shape 검사 + model_io 기록
+```
+- 결과: `ml/posture_model_8cls.pt`, `ml/posture_model_8cls.tflite`, `ml/norm_stats_8cls.json`, `ml/runs/8cls/` (confusion_lopo.png/csv, lopo_report.json)
+- 점검에서 걸린 파일은 이름에 `_reject` 를 붙이면 학습에서 빠진다.
+- json 하나에 앱 키(`label_order`, `model_io`)와 서버 키(`label_classes`, `sensor_cols_order`)가 모두 있다.
+- 앱 반입: `posture_model_8cls.tflite` → `assets/model/posture_model.tflite`, `norm_stats_8cls.json` → `assets/model/norm_stats.json`.
+  **앱 쪽 8클래스 수정(posture_class.dart 에 turtleNeck id 7, 전처리기 kExpectedLabelOrder 8개)이 먼저 들어가야** 로드된다.
+- 서버 교체: `posture_model_8cls.pt` → `posture_model_64ch.pt`, `norm_stats_8cls.json` → `norm_stats_64ch.json` (4단계 주의사항 동일).
+- 같은 사람이 날짜를 바꿔 다시 잰 파일(예: person=`aro1022`)은 이름 뒤 숫자를 떼어 같은 사람(`aro`)으로 평가한다.
+- 2026-10-22 결과
+  - 4명 28파일 (아로 3자세·다혜 앉지않음 미수집): LOPO 평균 55.9%
+  - + 아로 1022 재측정 8파일 (feat/aro) = 36파일: LOPO 평균 **64.3%**. 약한 자세: 거북목 29%, 정자세 36%, 오른다리 꼬기 58%
+
 ## 1. 수집 (센서 도착 후)
 ```
 pip install pyserial
