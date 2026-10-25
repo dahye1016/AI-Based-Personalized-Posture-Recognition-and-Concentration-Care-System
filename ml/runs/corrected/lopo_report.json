@@ -1,0 +1,62 @@
+{
+  "method": "leave-one-person-out (실측). 더미는 30명 전체 사용(평가 대상의 실측이 재료라 약간 유리)",
+  "persons": [
+    {
+      "person": "aro1022",
+      "acc_before_correction": 95.8,
+      "acc_after_correction": 95.7,
+      "per_posture_after": {
+        "not_sitting": 100.0,
+        "sitting_straight": 90.6,
+        "lean_forward": 92.3,
+        "cross_leg_right": 93.9,
+        "cross_leg_left": 100.0,
+        "lean_right": 95.0,
+        "lean_left": 97.9
+      }
+    },
+    {
+      "person": "dahye",
+      "acc_before_correction": 99.9,
+      "acc_after_correction": 99.9,
+      "per_posture_after": {
+        "not_sitting": 100.0,
+        "sitting_straight": 100.0,
+        "lean_forward": 100.0,
+        "cross_leg_right": 99.8,
+        "cross_leg_left": 100.0,
+        "lean_right": 99.8,
+        "lean_left": 100.0
+      }
+    },
+    {
+      "person": "junseo",
+      "acc_before_correction": 100.0,
+      "acc_after_correction": 100.0,
+      "per_posture_after": {
+        "not_sitting": 100.0,
+        "lean_forward": 100.0,
+        "cross_leg_right": 100.0,
+        "cross_leg_left": 100.0,
+        "lean_right": 100.0,
+        "lean_left": 100.0
+      }
+    },
+    {
+      "person": "yewon",
+      "acc_before_correction": 98.5,
+      "acc_after_correction": 98.4,
+      "per_posture_after": {
+        "not_sitting": 100.0,
+        "sitting_straight": 99.0,
+        "lean_forward": 99.0,
+        "cross_leg_right": 98.6,
+        "cross_leg_left": 97.3,
+        "lean_right": 98.9,
+        "lean_left": 95.8
+      }
+    }
+  ],
+  "mean_before": 98.5,
+  "mean_after": 98.5
+}

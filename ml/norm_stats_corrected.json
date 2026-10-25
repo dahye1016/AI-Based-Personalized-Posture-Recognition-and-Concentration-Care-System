@@ -1,0 +1,116 @@
+{
+  "label_order": [
+    "not_sitting",
+    "sitting_straight",
+    "lean_forward",
+    "cross_leg_right",
+    "cross_leg_left",
+    "lean_right",
+    "lean_left"
+  ],
+  "class_index": {
+    "not_sitting": 0,
+    "sitting_straight": 1,
+    "lean_forward": 2,
+    "cross_leg_right": 3,
+    "cross_leg_left": 4,
+    "lean_right": 5,
+    "lean_left": 6
+  },
+  "num_classes": 7,
+  "model_io": {
+    "tflite_file": "posture_model_corrected.tflite",
+    "input_shape": [
+      1,
+      128
+    ],
+    "input_dtype": "float32",
+    "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63]. 정규화하지 말 것. 기준값은 쓰지 않으므로 0 이어도 됨",
+    "output_shape": [
+      1,
+      7
+    ],
+    "output": "7자세 확률 (argmax 가 label_order 인덱스). 정자세 보정 포함",
+    "keras_vs_tflite_agreement": 1.0
+  },
+  "raw_input": true,
+  "channel_layout": "ch0~31 좌석, ch32~63 등받이",
+  "model": {
+    "type": "특징(채널 비율 64 + log 합 + 등받이 비율·등받이 왼쪽 비율·오른 무릎 비율) -> MLP 128-64 -> softmax",
+    "correction": "argmax 가 lean_left/lean_right 인데 등받이 합>=100, 등받이 왼쪽 비율 5~85%, 무릎 합>=100, 오른 무릎 비율 20~90% 이면 sitting_straight",
+    "train_data": {
+      "real": "real_27.csv.gz (33716프레임, 27녹화)",
+      "dummy": "dummy_30p.csv.gz (1/5 샘플)",
+      "flip": "좌우 반전 + 라벨 스왑으로 2배"
+    }
+  },
+  "trained_on_persons": [
+    "aro1022",
+    "dahye",
+    "junseo",
+    "yewon"
+  ],
+  "person_split_eval": {
+    "method": "leave-one-person-out (실측). 더미는 30명 전체 사용(평가 대상의 실측이 재료라 약간 유리)",
+    "persons": [
+      {
+        "person": "aro1022",
+        "acc_before_correction": 95.8,
+        "acc_after_correction": 95.7,
+        "per_posture_after": {
+          "not_sitting": 100.0,
+          "sitting_straight": 90.6,
+          "lean_forward": 92.3,
+          "cross_leg_right": 93.9,
+          "cross_leg_left": 100.0,
+          "lean_right": 95.0,
+          "lean_left": 97.9
+        }
+      },
+      {
+        "person": "dahye",
+        "acc_before_correction": 99.9,
+        "acc_after_correction": 99.9,
+        "per_posture_after": {
+          "not_sitting": 100.0,
+          "sitting_straight": 100.0,
+          "lean_forward": 100.0,
+          "cross_leg_right": 99.8,
+          "cross_leg_left": 100.0,
+          "lean_right": 99.8,
+          "lean_left": 100.0
+        }
+      },
+      {
+        "person": "junseo",
+        "acc_before_correction": 100.0,
+        "acc_after_correction": 100.0,
+        "per_posture_after": {
+          "not_sitting": 100.0,
+          "lean_forward": 100.0,
+          "cross_leg_right": 100.0,
+          "cross_leg_left": 100.0,
+          "lean_right": 100.0,
+          "lean_left": 100.0
+        }
+      },
+      {
+        "person": "yewon",
+        "acc_before_correction": 98.5,
+        "acc_after_correction": 98.4,
+        "per_posture_after": {
+          "not_sitting": 100.0,
+          "sitting_straight": 99.0,
+          "lean_forward": 99.0,
+          "cross_leg_right": 98.6,
+          "cross_leg_left": 97.3,
+          "lean_right": 98.9,
+          "lean_left": 95.8
+        }
+      }
+    ],
+    "mean_before": 98.5,
+    "mean_after": 98.5
+  },
+  "train_set_accuracy": 0.9975382607664017
+}
