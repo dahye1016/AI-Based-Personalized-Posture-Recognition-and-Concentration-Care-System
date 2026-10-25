@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
@@ -53,8 +54,8 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
   }
 
   void _setupCounter() {
-    final check = StretchPoses.checkFor(widget.routine.moves[_moveIndex]);
-    _counter = check == null ? null : RepCounter(check);
+    final rule = StretchPoses.ruleFor(widget.routine.moves[_moveIndex]);
+    _counter = rule == null ? null : RepCounter(rule);
     _holding = false;
   }
 
@@ -68,13 +69,27 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
       if (counter.add(pose, at)) count++;
       holding = counter.holding;
     }
-    if (visible != _personVisible || holding != _holding || count != _count) {
+    // 디버그 빌드에서는 판정값을 화면에 띄우므로 매 프레임 다시 그린다.
+    if (kDebugMode ||
+        visible != _personVisible ||
+        holding != _holding ||
+        count != _count) {
       setState(() {
         _personVisible = visible;
         _holding = holding;
         _count = count;
       });
     }
+  }
+
+  String get _debugText {
+    final c = _counter!;
+    final v = c.lastValue;
+    final u = c.rule.unit;
+    String f(double x) => u == '°' ? x.toStringAsFixed(0) : x.toStringAsFixed(2);
+    return v == null
+        ? '판정값: 관절 안 보임 (기준 ${f(c.rule.threshold)}$u)'
+        : '판정값 ${f(v)}$u / 기준 ${f(c.rule.threshold)}$u';
   }
 
   String get _badgeText {
@@ -157,6 +172,17 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                     child: _GlassLabel(text: '기기에서만 분석 · 영상은 저장되지 않아요'),
                   ),
                 ),
+
+                // 판정값 (디버그 빌드에서만) — 기준을 맞출 때 본다.
+                if (kDebugMode && _counter != null)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 76,
+                    child: Center(
+                      child: _GlassLabel(text: _debugText),
+                    ),
+                  ),
 
                 // 판정 배지
                 Positioned(
