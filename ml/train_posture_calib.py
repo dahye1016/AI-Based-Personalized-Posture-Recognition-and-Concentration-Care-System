@@ -7,8 +7,9 @@ train_posture_calib.py — 캘리브레이션 + 두 모델 합치기 + 거북목
 출력: [1, 8] 자세별 확률. argmax 가 label_order 인덱스.
 
 모델 안에서 하는 일
-  1. 부위 특징 93개: 좌석/등받이 합(log), 등받이 비율, 부위 12곳(엉덩이·허벅지·무릎·허리·등중간·어깨 x 좌우)
-     비율과 합(log), 좌석/등받이 오른쪽 비율, 채널별 비율(좌석은 좌석합, 등받이는 등받이합으로 나눔)
+  1. 부위 특징 98개: 좌석/등받이 합(log), 등받이 비율, 부위 12곳(엉덩이·허벅지·무릎·허리·등중간·어깨 x 좌우)
+     비율과 합(log), 좌석/등받이 오른쪽 비율, 채널별 비율(좌석은 좌석합, 등받이는 등받이합으로 나눔),
+     좌우 비율 log(오른/왼) (무릎·엉덩이·어깨·허벅지) + 무릎 균형(작은 쪽/큰 쪽)
   2. 모양 모델: 지금 프레임 특징 -> 8자세 확률
      차이 모델: (지금 프레임 특징 - 기준값 특징) -> 8자세 확률
      두 확률을 반반 평균한다. (모양 모델은 기대기·숙이기에, 차이 모델은 사람마다 다른 정자세에 강하다)
@@ -76,7 +77,7 @@ REG = [("hipL", range(0, 5), "s"), ("hipR", range(5, 10), "s"), ("thL", range(10
        ("miL", range(49, 56), "b"), ("shR", range(56, 60), "b"), ("shL", range(60, 64), "b")]
 SEAT_R = list(range(5, 10)) + list(range(17, 24)) + list(range(28, 32))
 BACK_R = list(range(32, 37)) + list(range(42, 49)) + list(range(56, 60))
-N_FEAT = 3 + 2 * len(REG) + 2 + 64
+N_FEAT = 3 + 2 * len(REG) + 2 + 64 + 5     # 마지막 5개 = 좌우 비율(무릎·엉덩이·어깨·허벅지) + 무릎 균형
 
 
 class Features(nn.Module):
@@ -101,11 +102,19 @@ class Features(nn.Module):
         rs = x @ self.reg                                              # [B,12]
         denom = seat * self.is_seat_reg + back * (1.0 - self.is_seat_reg)
         sd = x @ self.side                                             # [B,2]
+        # 좌우 비율: 거북목(양쪽 무릎 닿음)과 다리 꼬기(한쪽 무릎 들림)를 몸무게·캘리브레이션과 무관하게 가른다
+        kl, kr = x[:, 24:28].sum(1, keepdim=True) + 10.0, x[:, 28:32].sum(1, keepdim=True) + 10.0
+        hl, hr = x[:, 0:5].sum(1, keepdim=True) + 10.0, x[:, 5:10].sum(1, keepdim=True) + 10.0
+        sl, sr = x[:, 60:64].sum(1, keepdim=True) + 10.0, x[:, 56:60].sum(1, keepdim=True) + 10.0
+        tl, tr = x[:, 10:17].sum(1, keepdim=True) + 10.0, x[:, 17:24].sum(1, keepdim=True) + 10.0
+        lr = torch.cat([torch.log(kr / kl), torch.log(hr / hl), torch.log(sr / sl), torch.log(tr / tl),
+                        torch.minimum(kl, kr) / torch.maximum(kl, kr)], dim=1)
         return torch.cat([
             torch.log1p(seat), torch.log1p(back), back / tot,
             rs / denom, torch.log1p(rs),
             sd[:, :1] / seat, sd[:, 1:] / back,
             x[:, :32] / seat, x[:, 32:] / back,
+            lr,
         ], dim=1)
 
 
@@ -114,11 +123,15 @@ def mlp():
                          nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, N))
 
 
+USE_RULE = {"on": True}      # --no-rule 이면 거북목 규칙 없이 모델 판정만
+
+
 class CalibNet(nn.Module):
     """입력 [B,128] = 지금 프레임 64 + 기준값 64 (원시값). 출력 [B,8] 확률."""
 
     def __init__(self):
         super().__init__()
+        self.use_rule = USE_RULE["on"]
         self.feat = Features()
         self.shape_head = mlp()
         self.diff_head = mlp()
@@ -136,6 +149,8 @@ class CalibNet(nn.Module):
         x, b = xb[:, :64], xb[:, 64:]
         ls, ld = self.logits(x, b)
         p = (1.0 - W_REL) * torch.softmax(ls, 1) + W_REL * torch.softmax(ld, 1)
+        if not self.use_rule:
+            return p
         R = T.TURTLE_RULE
         hit = ((x[:, :32].sum(1) >= R["seat_min"]) & (x[:, 32:56].sum(1) >= R["back_min"])
                & (x[:, 56:64].sum(1) <= R["shoulder_max"])).float().unsqueeze(1)
@@ -231,10 +246,24 @@ def predict(net, X, base):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--no-rule", action="store_true", help="거북목 규칙 없이 모델 판정만 쓴다")
+    ap.add_argument("--spec", action="store_true",
+                    help="팀 자세 정의(gen_dummy_spec.py)에 맞는 실측 녹화만 학습에 쓰고(거북목 포함), "
+                         "평가의 '정의대로 앉은 녹화'도 이 정의로 고른다")
+    args = ap.parse_args()
+    USE_RULE["on"] = not args.no_rule
     np.random.seed(SEED)
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     T.ONLY_PASSING["on"] = False
     df = T.load_raw()
+    if args.spec:
+        sys.path.insert(0, str(ROOT))
+        import gen_dummy_spec as S
+        rec_ok = lambda g: S.spec_ok(str(g["posture"].iloc[0]), g[CH].values.astype(float))
+    else:
+        rec_ok = T.passes_protocol
     dm = T.load_dummy(DUMMY_GZ, DUMMY_EVERY)
     cal_real, cal_used = real_calibration()
     cal_dm = dummy_calibration(dm)
@@ -245,8 +274,15 @@ def main():
     key = ["session", "posture", "trial"]
     ok = np.zeros(len(df), bool)
     for k, g in df.groupby(key):
-        if T.passes_protocol(g):
+        if rec_ok(g):
             ok[g.index] = True
+    print("정의에 맞는 실측 녹화:", sorted({f"{k[0]}:{k[1]}" for k, g in df[ok].groupby(key)}))
+
+    def train_real(d):
+        """학습에 쓸 실측: --spec 이면 정의에 맞는 녹화만(거북목 포함), 아니면 거북목 뺀 전체."""
+        if args.spec:
+            return d[ok[d.index]]
+        return d[d["posture"] != "turtle_neck"]
     drop = np.zeros(len(df), bool)                       # 캘리브레이션 5초는 평가에서 뺀다
     for s, (trial, _) in cal_used.items():
         m = ((df["session"] == s) & (df["posture"] == "sitting_straight") & (df["trial"] == trial)).values
@@ -257,7 +293,7 @@ def main():
     folds = []
     for i, p in enumerate(persons):
         print(f"\n[{i + 1}/{len(persons) + 1}] {p} 빼고 학습 중...", flush=True)
-        tr = df[(df["person"] != p) & (df["posture"] != "turtle_neck")]
+        tr = train_real(df[df["person"] != p])
         d = dm[~dm["template_person"].str.split("+").map(lambda ps: p in ps)]
         X, B, y = assemble(tr, d, cal_real, cal_dm)
         net = fit(X, B, y)
@@ -295,7 +331,7 @@ def main():
 
     # ---- 최종 모델: 전체 인원 ----
     print(f"\n[{len(persons) + 1}/{len(persons) + 1}] 전체 인원으로 최종 모델 학습 중...", flush=True)
-    X, B, y = assemble(df[df["posture"] != "turtle_neck"], dm, cal_real, cal_dm)
+    X, B, y = assemble(train_real(df), dm, cal_real, cal_dm)
     net = fit(X, B, y)
     torch.save(net.state_dict(), OUT_PT)
 
@@ -351,7 +387,10 @@ def main():
             "how": "사용자가 정자세(허리·등·어깨를 등받이에 붙임)로 5초 앉는 동안 채널별 원시값 평균 64개를 저장해 두고, "
                    "매 프레임 입력 뒤쪽 64개로 같이 넣는다. 사용자·의자 위치가 바뀌면 다시 잰다.",
         },
-        "turtle_rule": dict(T.TURTLE_RULE, note="모델 안에 포함됨 (앱에서 따로 할 필요 없음)"),
+        "turtle_rule": (dict(T.TURTLE_RULE, note="모델 안에 포함됨 (앱에서 따로 할 필요 없음)")
+                        if USE_RULE["on"] else None),
+        "training_mode": {"rule": USE_RULE["on"], "spec": args.spec,
+                          "spec_note": "gen_dummy_spec.py 의 SPEC (팀 자세 정의 2026-10-25)" if args.spec else None},
         "ensemble": {"shape_model_weight": 1 - W_REL, "diff_model_weight": W_REL},
         "trained_on_persons": persons,
         "person_split_eval": {
