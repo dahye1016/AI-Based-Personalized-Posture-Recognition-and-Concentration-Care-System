@@ -92,6 +92,9 @@ class DayStats {
 /// 길면(연결 끊김 등) 그 구간은 세지 않는다. 자리 비움·신호 대기도 세지 않는다.
 ///
 /// 기기에 저장(shared_preferences)해서 앱을 껐다 켜도 남는다. 최근 [keepDays]일만 보관.
+///
+/// **사용자별로 따로 쌓는다.** 로그인하면 [switchUser] 로 그 사람의 기록으로 바뀌고,
+/// 로그인하지 않으면(건너뛰기) [guestKey] 기록을 쓴다.
 class SittingStats extends ChangeNotifier {
   SittingStats._();
 
@@ -101,6 +104,15 @@ class SittingStats extends ChangeNotifier {
   static const Duration maxGap = Duration(seconds: 2);
   static const int keepDays = 14;
   static const String _prefsKey = 'sitting_stats_v1';
+
+  /// 로그인하지 않은 사용자의 기록 키.
+  static const String guestKey = 'guest';
+
+  /// 지금 기록을 쌓고 있는 사용자.
+  String _userKey = guestKey;
+  String get userKey => _userKey;
+
+  String get _storageKey => '$_prefsKey:$_userKey';
 
   /// 날짜(연·월·일) → 그날 기록.
   final Map<DateTime, DayStats> _days = {};
@@ -182,12 +194,27 @@ class SittingStats extends ChangeNotifier {
     _scheduleSave();
   }
 
+  // ── 사용자 전환 ─────────────────────────────────────────────────
+  /// 다른 사용자로 바꾼다. 지금 사용자의 기록을 먼저 저장하고, 새 사용자의 기록을 불러온다.
+  Future<void> switchUser(String userKey) async {
+    final key = userKey.trim().isEmpty ? guestKey : userKey.trim();
+    if (key == _userKey) return;
+    _saveTimer?.cancel();
+    await _save();
+    _userKey = key;
+    _days.clear();
+    _last = null;
+    _straightRunMs = 0;
+    notifyListeners();
+    await load();
+  }
+
   // ── 저장 ───────────────────────────────────────────────────────
-  /// 앱 시작 시 한 번 불러온다. 실패해도 빈 기록으로 계속 간다.
+  /// 지금 사용자의 기록을 불러온다. 실패해도 빈 기록으로 계속 간다.
   Future<void> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_prefsKey);
+      final raw = prefs.getString(_storageKey);
       if (raw == null) return;
       final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
       for (final j in list) {
@@ -212,7 +239,7 @@ class SittingStats extends ChangeNotifier {
       _prune();
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
-          _prefsKey, jsonEncode([for (final d in _days.values) d.toJson()]));
+          _storageKey, jsonEncode([for (final d in _days.values) d.toJson()]));
     } catch (e) {
       debugPrint('[SittingStats] 저장 실패: $e');
     }

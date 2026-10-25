@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/profile_store.dart';
 import '../services/sitting_stats.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
@@ -40,9 +41,8 @@ class _ReportScreenState extends State<ReportScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 BmHeader(
-                  eyebrow: _tab == 0
-                      ? _date(now)
-                      : '${_short(weekStart)} – ${_short(now)}',
+                  eyebrow: '${ProfileStore.instance.displayName}님 · '
+                      '${_tab == 0 ? _date(now) : '${_short(weekStart)} – ${_short(now)}'}',
                   title: _tab == 0 ? '오늘의 리포트' : '이번 주 리포트',
                 ),
                 Padding(
