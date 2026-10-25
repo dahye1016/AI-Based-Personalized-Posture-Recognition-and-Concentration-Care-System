@@ -1,9 +1,0 @@
-﻿,not_sitting,sitting_straight,lean_forward,cross_leg_right,cross_leg_left,lean_right,lean_left,turtle_neck
-not_sitting,3732,0,0,1,2,0,0,0
-sitting_straight,0,1936,0,1,0,1,31,0
-lean_forward,0,4,4871,3,0,5,11,85
-cross_leg_right,0,67,31,5937,0,72,8,112
-cross_leg_left,0,0,6,0,6136,83,0,0
-lean_right,0,0,43,4,19,2424,0,0
-lean_left,0,54,50,0,3,0,3627,0
-turtle_neck,0,3,17,22,6,50,0,2393
