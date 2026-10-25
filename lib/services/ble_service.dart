@@ -395,6 +395,7 @@ class BleService {
       }
     }
     link.lastFrameNo = frameNo;
+    if (frameNo % 10 == 0) debugPrint('$tag rx len=${raw.length} frameNo=$frameNo sum=${channels.fold<int>(0, (a, b) => a + b)}'); // TODO(작업36): 등받이 수신 확인 후 삭제
 
     if (link.frameController.isClosed) return;
     link.frameController.add(SensorFrame(

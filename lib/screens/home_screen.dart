@@ -46,8 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
   double _fps = 0;
   bool _showIndex = false;
 
-  // ── 등받이 센서 (PoseLab-Back) — 히트맵 표시용 ─────────────────────
-  // 판정은 아직 좌석 32ch 모델이라 등받이는 화면에만 쓴다.
+  // 등받이 보드 (표시·진단 전용 — 판정은 좌석 32ch 만 쓴다)
   StreamSubscription<SensorFrame>? _backSub;
   SensorFrame? _lastBackFrame;
   final List<DateTime> _backRecvTimes = [];
@@ -493,7 +492,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           )),
                     ),
                     const SizedBox(height: 8),
-                    _HeatGrid(grid: _backGrid),
+                    _HeatGrid(grid: _backHeatGrid),
                     const SizedBox(height: 14),
                     const Align(
                       alignment: Alignment.centerLeft,
@@ -638,31 +637,24 @@ class _HomeScreenState extends State<HomeScreen> {
     return grid;
   }
 
-  /// 등받이 화면 행 — 위(어깨) → 가운데(등) → 아래(허리). 8 / 14 / 10.
-  /// 각 행에서 번호 증가 = 사용자의 오른쪽 → 왼쪽이라, 오름차순으로 그리면
-  /// 좌석 히트맵과 같은 방향(화면 왼쪽 = 사용자의 오른쪽)이 된다.
-  static final List<List<int>> _backRows = [
-    [for (var c = 56; c <= 63; c++) c],
-    [for (var c = 42; c <= 55; c++) c],
-    [for (var c = 32; c <= 41; c++) c],
-  ];
+  /// 등받이 32채널을 [SensorLayout.backDisplayRows] 순서(어깨 → 중간 → 허리,
+  /// 각 줄 Right → Left)로 0~1 정규화한 값. 등받이 자체 최댓값 기준.
+  /// 등받이 보드 프레임은 ch0~31 이므로 64ch 번호에서 backFirstCh 를 빼서 읽는다.
+  List<List<double>> get _backHeatGrid {
+    const rows = SensorLayout.backDisplayRows;
+    final grid = [for (final row in rows) List<double>.filled(row.length, 0)];
+    final back = _lastBackFrame?.channels ?? const <int>[];
+    if (back.length < SensorLayout.nBackChannels) return grid;
 
-  /// 등받이 32채널(등받이 보드 ch0~31 = 64ch 의 ch32~63)을 0~1 로 정규화.
-  List<List<double>> get _backGrid {
-    final grid = [
-      for (final row in _backRows) List<double>.filled(row.length, 0),
-    ];
-    final f = _lastBackFrame?.channels ?? const <int>[];
-    if (f.length < SensorLayout.nBackChannels) return grid;
     var maxV = 0;
-    for (final v in f) {
+    for (final v in back) {
       if (v > maxV) maxV = v;
     }
     if (maxV <= 0) return grid;
-    for (var r = 0; r < _backRows.length; r++) {
-      final row = _backRows[r];
-      for (var c = 0; c < row.length; c++) {
-        grid[r][c] = f[row[c] - SensorLayout.backFirstCh] / maxV;
+
+    for (var r = 0; r < rows.length; r++) {
+      for (var c = 0; c < rows[r].length; c++) {
+        grid[r][c] = back[rows[r][c] - SensorLayout.backFirstCh] / maxV;
       }
     }
     return grid;

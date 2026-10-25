@@ -92,6 +92,21 @@ class SensorLayout {
   // 등받이 전체
   static const List<int> backCh = [...backWaistCh, ...backMidCh, ...backShoulderCh];
 
+  // 표시용 줄 (히트맵 전용) — 좌석 hipCh 등과 같은 방향(Right → Left)으로 맞춘다.
+  // 값은 64ch 번호(32~63). 등받이 보드 단독 프레임에서는 backFirstCh 를 빼서 읽는다.
+  static const List<int> backWaistDisplay = [...backWaistRight, ...backWaistLeft]; // 10
+  static const List<int> backMidDisplay = [...backMidRight, ...backMidLeft]; // 14
+  static const List<int> backShoulderDisplay = [
+    ...backShoulderRight,
+    ...backShoulderLeft,
+  ]; // 8
+  /// 위(어깨) → 아래(허리) 순서.
+  static const List<List<int>> backDisplayRows = [
+    backShoulderDisplay,
+    backMidDisplay,
+    backWaistDisplay,
+  ];
+
   // 노드 1개가 대표하는 면적 (cm²) — 접촉 면적 계산용 근사값
   static const double nodeAreaCm2 =
       (widthMm / 10.0) * (heightMm / 10.0) / nChannels;
