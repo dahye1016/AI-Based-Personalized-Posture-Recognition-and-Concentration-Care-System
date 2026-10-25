@@ -17,7 +17,6 @@ const List<String> kExpectedLabelOrder = [
   'cross_leg_left', // 4 왼다리 꼬기
   'lean_right', // 5 오른쪽 기대기
   'lean_left', // 6 왼쪽 기대기
-  'turtle_neck', // 7 거북목
 ];
 
 class PosturePreprocessor {

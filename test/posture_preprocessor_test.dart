@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:posturecare_ai/services/posture_preprocessor.dart';
 
-/// 8클래스 64ch 원시값 모델(assets/model/norm_stats_gbt.json)용 전처리 검사.
+/// 7클래스 64ch 원시값 모델(assets/model/norm_stats_gbt.json)용 전처리 검사.
 /// 학습(feat/dahye ml/train_posture_gbt.py)의 입력은
 /// [지금 프레임 원시값 ch0~63] + [기준값 ch0~63] 128개이고 정규화하지 않는다.
 Map<String, dynamic> _json() =>
@@ -12,9 +12,9 @@ Map<String, dynamic> _json() =>
         as Map<String, dynamic>;
 
 void main() {
-  test('json 의 라벨 순서가 앱 순서와 같다 (8개)', () {
+  test('json 의 라벨 순서가 앱 순서와 같다 (7개)', () {
     expect(_json()['label_order'], kExpectedLabelOrder);
-    expect(kExpectedLabelOrder.length, 8);
+    expect(kExpectedLabelOrder.length, 7);
   });
 
   test('json 으로 만들면 채널 64 / 입력 128', () {
@@ -28,9 +28,9 @@ void main() {
     expect(() => PosturePreprocessor.fromJson(json), throwsStateError);
   });
 
-  test('라벨이 7개인 예전 json 은 거부', () {
+  test('라벨 개수가 다른 json(예전 8클래스 등)은 거부', () {
     final json = _json();
-    json['label_order'] = (json['label_order'] as List).sublist(0, 7);
+    json['label_order'] = [...json['label_order'] as List, 'extra'];
     expect(() => PosturePreprocessor.fromJson(json), throwsStateError);
   });
 

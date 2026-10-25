@@ -6,8 +6,7 @@
     "cross_leg_right",
     "cross_leg_left",
     "lean_right",
-    "lean_left",
-    "turtle_neck"
+    "lean_left"
   ],
   "class_index": {
     "not_sitting": 0,
@@ -16,8 +15,7 @@
     "cross_leg_right": 3,
     "cross_leg_left": 4,
     "lean_right": 5,
-    "lean_left": 6,
-    "turtle_neck": 7
+    "lean_left": 6
   },
   "label_names": {
     "p0": "앉지 않음",
@@ -26,10 +24,9 @@
     "p3": "오른다리 꼬기",
     "p4": "왼다리 꼬기",
     "p5": "오른쪽 기대기",
-    "p6": "왼쪽 기대기",
-    "p7": "거북목"
+    "p6": "왼쪽 기대기"
   },
-  "num_classes": 8,
+  "num_classes": 7,
   "model_io": {
     "tflite_file": "posture_model_gbt.tflite",
     "input_shape": [
@@ -40,9 +37,9 @@
     "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63]. 정규화하지 말 것",
     "output_shape": [
       1,
-      8
+      7
     ],
-    "output": "8자세 확률 (argmax 가 label_order 인덱스). 규칙 없음",
+    "output": "7자세 확률 (argmax 가 label_order 인덱스). 규칙 없음",
     "sklearn_vs_tflite_agreement": 1.0
   },
   "raw_input": true,
@@ -70,27 +67,25 @@
   ],
   "person_split_eval": {
     "method": "leave-one-person-out (실측만, 캘리브레이션 5초 제외)",
-    "pooled_accuracy_spec": 0.9750706436420722,
-    "pooled_accuracy_all": 0.8940813750242765,
+    "pooled_accuracy_spec": 0.9607182940516273,
+    "pooled_accuracy_all": 0.9132536109806955,
     "per_class_spec": {
-      "not_sitting": 0.9991967871485944,
-      "sitting_straight": 0.9832402234636871,
-      "lean_forward": 0.9783088973689495,
-      "cross_leg_right": 0.953428617311707,
-      "cross_leg_left": 0.9857028112449799,
-      "lean_right": 0.9734939759036144,
-      "lean_left": 0.9713444027852169,
-      "turtle_neck": 0.9606583701324769
+      "not_sitting": 0.9989290495314592,
+      "sitting_straight": 0.7579201101928374,
+      "lean_forward": 0.9789114279975899,
+      "cross_leg_right": 0.9752689898827686,
+      "cross_leg_left": 0.9861847389558233,
+      "lean_right": 0.9686746987951808,
+      "lean_left": 0.9839314408141403
     },
     "per_class_all": {
-      "not_sitting": 0.9991967871485944,
-      "sitting_straight": 0.9382618953991348,
-      "lean_forward": 0.9783088973689495,
-      "cross_leg_right": 0.953428617311707,
-      "cross_leg_left": 0.9857028112449799,
-      "lean_right": 0.7731726907630522,
-      "lean_left": 0.7284595300261096,
-      "turtle_neck": 0.7872055674518201
+      "not_sitting": 0.9989290495314592,
+      "sitting_straight": 0.8163584266736129,
+      "lean_forward": 0.9789114279975899,
+      "cross_leg_right": 0.9752689898827686,
+      "cross_leg_left": 0.9861847389558233,
+      "lean_right": 0.7736546184738956,
+      "lean_left": 0.8638280779272947
     }
   }
 }

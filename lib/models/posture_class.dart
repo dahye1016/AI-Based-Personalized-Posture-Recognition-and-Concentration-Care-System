@@ -8,13 +8,13 @@ import '../theme/app_theme.dart';
 /// 라벨/색/문구를 바꿀 일이 생기면 이 파일만 고치면 된다.
 ///
 /// ## [id] 는 함부로 바꾸지 말 것
-/// 0~7 은 팀 확정 8클래스이며, 이 숫자가 그대로
+/// 0~6 은 팀 확정 7클래스이며, 이 숫자가 그대로
 ///   · TFLite 모델의 출력 인덱스
 ///   · 서버 `posture_logs.posture` 컬럼 값
 /// 이다. 순서를 바꾸거나 중간에 값을 끼워 넣으면 저장된 기록과 어긋난다.
 ///
-/// ## 8클래스 (64ch) 모델
-/// 번들 모델은 assets/model/posture_model_gbt.tflite (출력 8개, id 0~7).
+/// ## 7클래스 (64ch) 모델
+/// 번들 모델은 assets/model/posture_model_gbt.tflite (출력 7개, id 0~6).
 /// [canonical] 순서는 아래 2곳과 항상 같아야 한다 (어긋나면 모델 로드 단계에서 실패):
 ///   1. lib/services/posture_preprocessor.dart 의 `kExpectedLabelOrder`
 ///   2. assets/model/norm_stats_gbt.json 의 `label_order` / `class_index`
@@ -78,16 +78,6 @@ enum PostureClass {
     isBad: true,
   ),
 
-  /// 거북목. 64ch 수집 문자열 `turtle_neck`. 좌우 대칭 자세.
-  turtleNeck(
-    id: 7,
-    label: '거북목',
-    message: '목이 앞으로 빠졌어요. 턱을 당기고 등을 붙여주세요.',
-    advice: '목과 어깨에 부담이 쌓이고 있어요.\n잠깐 펴고 가실래요?',
-    color: AppColors.postureLean, // 임시 — 전용 색 미정 (앞으로 숙이기와 같은 색)
-    isBad: true,
-  ),
-
   // ── 잠정값 (id 없음). TFLite 교체 시 제거 ──────────────────────
   /// 규칙 판정기는 `(left-right).abs()` 로 좌우 부호를 버려서
   /// [crossLegRight] / [crossLegLeft] 를 못 가른다. 그 동안 쓰는 값.
@@ -144,7 +134,7 @@ enum PostureClass {
   /// 경고 대상인지. 알림·스트레칭 유도의 기준이 된다.
   final bool isBad;
 
-  /// **현재 번들 모델**의 출력 순서 (id 0~7, 8클래스).
+  /// **현재 번들 모델**의 출력 순서 (id 0~6, 7클래스).
   static const List<PostureClass> canonical = [
     notSitting,
     straight,
@@ -153,7 +143,6 @@ enum PostureClass {
     crossLegLeft,
     leanRight,
     leanLeft,
-    turtleNeck,
   ];
 
   /// 알림을 띄울 수 있는 클래스 ([canonical] 기준, 잠정값 제외).
@@ -164,6 +153,6 @@ enum PostureClass {
   /// [canonical] 에 없는 id 면 [StateError].
   static PostureClass fromId(int id) => canonical.firstWhere(
         (p) => p.id == id,
-        orElse: () => throw StateError('알 수 없는 자세 id: $id (0~7 이어야 함)'),
+        orElse: () => throw StateError('알 수 없는 자세 id: $id (0~6 이어야 함)'),
       );
 }
