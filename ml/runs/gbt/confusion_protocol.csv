@@ -1,8 +1,8 @@
 ﻿,not_sitting,sitting_straight,lean_forward,cross_leg_right,cross_leg_left,lean_right,lean_left
 not_sitting,3731,0,0,1,2,0,1
-sitting_straight,0,2201,0,702,0,1,0
-lean_forward,0,60,4874,7,9,17,12
-cross_leg_right,0,2,57,6073,2,54,39
-cross_leg_left,0,0,6,2,6139,75,3
-lean_right,0,1,26,21,30,2412,0
-lean_left,0,4,49,0,6,1,3674
+sitting_straight,0,2903,0,0,0,1,0
+lean_forward,0,85,4833,49,0,0,12
+cross_leg_right,0,20,45,5981,0,56,125
+cross_leg_left,0,0,3,0,5479,743,0
+lean_right,0,2,44,13,12,2419,0
+lean_left,0,40,46,0,6,1,3641
