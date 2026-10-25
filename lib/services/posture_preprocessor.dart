@@ -127,8 +127,8 @@ class BaselineCollector {
 }
 
 /// 최근 [window] 개 판정 중 가장 많은 값을 돌려줘서 화면이 깜빡이지 않게 한다.
-/// 창 크기는 [PostureModel.load] 의 smoothWindow 로 주입된다 (기본 5 = BLE Notify 10Hz 에서 0.5초).
-/// 시리얼 수집(50fps)처럼 프레임이 빠른 경로에서는 25 를 넘겨야 같은 0.5초가 된다.
+/// 창 크기는 [PostureModel.load] 의 smoothWindow 로 주입된다 (기본 20 = 병합 프레임 10Hz 에서 2초).
+/// 시리얼 수집(50fps)처럼 프레임이 빠른 경로에서는 100 을 넘겨야 같은 2초가 된다.
 class MajoritySmoother {
   MajoritySmoother({this.window = 25});
 

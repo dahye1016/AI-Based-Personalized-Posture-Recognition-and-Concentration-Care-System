@@ -48,9 +48,11 @@ class PostureModel {
 
   /// assets 에서 모델과 정규화 값을 읽는다. 순서·shape 가 맞지 않으면 예외를 던진다.
   ///
-  /// [smoothWindow] 는 다수결 창 크기. 기본 5 = BLE Notify 10Hz 에서 0.5초.
-  /// (기존 25 는 시리얼 수집 50fps 전제였다. 같은 모델을 두 경로가 쓰므로 창만 주입한다.)
-  static Future<PostureModel> load({int smoothWindow = 5}) async {
+  /// [smoothWindow] 는 다수결 창 크기. 기본 20 = 병합 프레임 10Hz 에서 2초.
+  /// 자세를 바꾸는 도중(다리를 드는 순간 등)은 학습에 없는 압력이라 0.5초 창에서는
+  /// 앞으로 숙이기·기대기가 잠깐 튀었다. 2초 창이면 새 자세를 약 1초 유지해야 바뀐다.
+  /// (시리얼 수집 50fps 경로는 같은 2초가 되도록 100 을 넘긴다.)
+  static Future<PostureModel> load({int smoothWindow = 20}) async {
     final stats =
         jsonDecode(await rootBundle.loadString(statsAsset)) as Map<String, dynamic>;
     final pre = PosturePreprocessor.fromJson(stats);
