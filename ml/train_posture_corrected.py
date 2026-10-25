@@ -13,8 +13,8 @@ train_posture_corrected.py — 7자세 64ch 모델 (정자세 보정 포함) 학
         (norm_stats_gbt.json 과 같은 계약. 기준값 64개는 받기만 하고 쓰지 않는다)
   특징  채널별 비율(값/전체 합) 64 + log(전체 합) + 등받이 비율·등받이 왼쪽 비율·오른 무릎 비율
   분류  MLP 128-64 -> 7자세 확률
-  규칙  없음. 대신 '반쯤 기댄' 프레임(정자세와 기대기를 섞음, 50% 이상 = 기대기)을 학습에 넣어
-        좌우 모두 살짝만 기대도 기대기로 잡히게 함. (StraightCorrection 클래스는 참고용으로 남김)
+  규칙  없음. 대신 '반쯤 한' 프레임(정자세와 나쁜 자세를 섞음, 50% 이상 = 그 자세)을 학습에 넣어
+        기대기·숙이기·다리 꼬기 모두 대충 해도 잡히게 함. (StraightCorrection 클래스는 참고용으로 남김)
   출력  [1, 7] 확률 (label_order 순서, argmax 사용)
 
 실행: python ml/train_posture_corrected.py   (tensorflow, pandas, numpy 필요)
@@ -103,21 +103,23 @@ def xy(df):
     return np.vstack([X, Xf]), np.r_[y, yf]
 
 
-LEAN_MIN = 0.5      # 정자세->기대기 사이를 이만큼 이상 가면 '기대기' (대충 기대도 잡히게)
+# 정자세 -> 나쁜 자세 사이를 이만큼 이상 가면 그 자세로 본다 (대충 해도 잡히게)
+PARTIAL_MIN = {"lean_left": 0.5, "lean_right": 0.5, "lean_forward": 0.5,
+               "cross_leg_left": 0.5, "cross_leg_right": 0.5}
 STRAIGHT_MAX = 0.25 # 이만큼 이하면 아직 '정자세'
 
 
 def partial_lean(df, n_per=600, seed=SEED):
-    """사람마다 정자세 프레임과 기대기 프레임을 섞어 '반쯤 기댄' 프레임을 만든다.
-    섞은 비율 a >= LEAN_MIN -> 기대기 라벨, a <= STRAIGHT_MAX -> 정자세 라벨."""
+    """사람마다 정자세 프레임과 나쁜 자세 프레임을 섞어 '반쯤 한' 프레임을 만든다.
+    섞은 비율 a >= PARTIAL_MIN[자세] -> 그 자세 라벨, a <= STRAIGHT_MAX -> 정자세 라벨."""
     rng = np.random.default_rng(seed); out = []
     for q, d in df.groupby("person"):
         st = d[d.posture == "sitting_straight"][CH].to_numpy(np.float32)
         if len(st) == 0: continue
-        for side in ("lean_left", "lean_right"):
+        for side, lean_min in PARTIAL_MIN.items():
             lf = d[d.posture == side][CH].to_numpy(np.float32)
             if len(lf) == 0: continue
-            for lo, hi, lab in ((LEAN_MIN, 1.0, side), (0.0, STRAIGHT_MAX, "sitting_straight")):
+            for lo, hi, lab in ((lean_min, 1.0, side), (0.0, STRAIGHT_MAX, "sitting_straight")):
                 a = rng.uniform(lo, hi, (n_per, 1)).astype(np.float32)
                 X = (1 - a) * st[rng.integers(len(st), size=n_per)] + a * lf[rng.integers(len(lf), size=n_per)]
                 X = np.rint(X); X[X < 20] = 0
@@ -183,7 +185,7 @@ def main():
         "channel_layout": "ch0~31 좌석, ch32~63 등받이",
         "model": {"type": "특징(채널 비율 64 + log 합 + 등받이 비율·등받이 왼쪽 비율·오른 무릎 비율) -> MLP 128-64 -> softmax",
                   "correction": "없음",
-                  "partial_lean": f"정자세·기대기 섞은 프레임 추가: 섞은 비율 >= {LEAN_MIN} 이면 기대기, <= {STRAIGHT_MAX} 이면 정자세 (사람·자세마다 600개)",
+                  "partial": f"정자세와 나쁜 자세 5개를 섞은 프레임 추가: 섞은 비율 >= {PARTIAL_MIN} 이면 그 자세, <= {STRAIGHT_MAX} 이면 정자세 (사람·자세마다 600개)",
                   "train_data": {"real": REAL.name + f" ({len(real)}프레임, 27녹화)", "dummy": DUMMY.name + f" (1/{DUMMY_EVERY} 샘플)", "flip": "좌우 반전 + 라벨 스왑으로 2배"}},
         "trained_on_persons": sorted(real.person.unique().tolist()),
         "person_split_eval": lopo,
