@@ -57,7 +57,8 @@
       "random_state": 42
     },
     "diff_weight": 0.5,
-    "posture_spec": "gen_dummy_spec.py SPEC (2026-10-25)"
+    "posture_spec": "gen_dummy_spec.py SPEC (2026-10-25)",
+    "source": "feat/dahye 2bac866 의 8자세 모델(앱에서 잘 되던 8.7MB)에서 거북목 출력 한 칸만 떼어 7자세로 다시 내보냄. 재학습 없음 — 7자세 중 1등은 원래 모델과 100% 같음. posture_model_gbt.pkl 은 그 8자세 원본(sklearn)"
   },
   "trained_on_persons": [
     "aro",
@@ -66,26 +67,26 @@
     "yewon"
   ],
   "person_split_eval": {
-    "method": "leave-one-person-out (실측만, 캘리브레이션 5초 제외)",
-    "pooled_accuracy_spec": 0.9607182940516273,
-    "pooled_accuracy_all": 0.9132536109806955,
+    "method": "leave-one-person-out (실측만, 캘리브레이션 5초 제외) — 2bac866 당시 8자세로 잰 값에서 거북목 칸만 뺌",
+    "pooled_accuracy_spec": 0.9750706436420722,
+    "pooled_accuracy_all": 0.8940813750242765,
     "per_class_spec": {
-      "not_sitting": 0.9989290495314592,
-      "sitting_straight": 0.7579201101928374,
-      "lean_forward": 0.9789114279975899,
-      "cross_leg_right": 0.9752689898827686,
-      "cross_leg_left": 0.9861847389558233,
-      "lean_right": 0.9686746987951808,
-      "lean_left": 0.9839314408141403
+      "not_sitting": 0.9991967871485944,
+      "sitting_straight": 0.9832402234636871,
+      "lean_forward": 0.9783088973689495,
+      "cross_leg_right": 0.953428617311707,
+      "cross_leg_left": 0.9857028112449799,
+      "lean_right": 0.9734939759036144,
+      "lean_left": 0.9713444027852169
     },
     "per_class_all": {
-      "not_sitting": 0.9989290495314592,
-      "sitting_straight": 0.8163584266736129,
-      "lean_forward": 0.9789114279975899,
-      "cross_leg_right": 0.9752689898827686,
-      "cross_leg_left": 0.9861847389558233,
-      "lean_right": 0.7736546184738956,
-      "lean_left": 0.8638280779272947
+      "not_sitting": 0.9991967871485944,
+      "sitting_straight": 0.9382618953991348,
+      "lean_forward": 0.9783088973689495,
+      "cross_leg_right": 0.953428617311707,
+      "cross_leg_left": 0.9857028112449799,
+      "lean_right": 0.7731726907630522,
+      "lean_left": 0.7284595300261096
     }
   }
 }

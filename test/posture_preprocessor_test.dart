@@ -23,6 +23,20 @@ void main() {
     expect(pre.inputLength, 128);
   });
 
+  test('앱이 쓰는 corrected json: 라벨 7개 일치, 입력 128, 기준값 안 씀', () {
+    final json = jsonDecode(
+            File('assets/model/norm_stats_corrected.json').readAsStringSync())
+        as Map<String, dynamic>;
+    expect(json['label_order'], kExpectedLabelOrder);
+    final pre = PosturePreprocessor.fromJson(json);
+    expect(pre.inputLength, 128);
+    expect(pre.usesBaseline, isFalse);
+  });
+
+  test('gbt json 은 기준값을 쓴다 (calibration 있음)', () {
+    expect(PosturePreprocessor.fromJson(_json()).usesBaseline, isTrue);
+  });
+
   test('raw_input 이 아닌 json 은 거부', () {
     final json = _json()..remove('raw_input');
     expect(() => PosturePreprocessor.fromJson(json), throwsStateError);

@@ -20,7 +20,7 @@ const List<String> kExpectedLabelOrder = [
 ];
 
 class PosturePreprocessor {
-  PosturePreprocessor({this.channelCount = 64});
+  PosturePreprocessor({this.channelCount = 64, this.usesBaseline = true});
 
   /// `norm_stats_gbt.json` (assets/model) 을 파싱한 Map 으로 만든다.
   /// 원시값 입력 모델(`raw_input: true`)만 받는다. mean/std 는 쓰지 않는다.
@@ -44,11 +44,19 @@ class PosturePreprocessor {
     if (length.isOdd) {
       throw StateError('입력 길이 $length 가 [프레임 + 기준값] 구조가 아닙니다.');
     }
-    return PosturePreprocessor(channelCount: length ~/ 2);
+    // 기준값 계약은 json 의 `calibration` 유무로 판단한다.
+    // gbt 모델은 있고(정자세 5초 평균), corrected 모델은 없다(뒤 64개 무시, 0 가능).
+    return PosturePreprocessor(
+      channelCount: length ~/ 2,
+      usesBaseline: json.containsKey('calibration'),
+    );
   }
 
   /// 프레임 채널 수 (64 = 좌석 32 + 등받이 32).
   final int channelCount;
+
+  /// 모델이 뒤 64개(기준값)를 실제로 쓰는지. false 면 0 을 채워 넣어도 된다.
+  final bool usesBaseline;
 
   /// 모델 입력 값 개수 (128 = 프레임 64 + 기준값 64).
   int get inputLength => channelCount * 2;
