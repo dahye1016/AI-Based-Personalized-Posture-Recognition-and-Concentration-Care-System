@@ -57,13 +57,14 @@ STALE_WARN_PCT = 5.0   # 버린 행이 이 비율을 넘으면 재촬영 권장
 # 포트 이름에 이걸 포함하면 우선 추천 (macOS USB-시리얼 브리지 칩 계열)
 PREFERRED = ("usbserial", "wchusbserial", "usbmodem", "SLAB_USBtoUART")
 
-# 매트 좌표계 (실측 확정)
-RIGHT_HIP = range(0, 5)
-LEFT_HIP = range(5, 10)
-RIGHT_THIGH = range(10, 17)
-LEFT_THIGH = range(17, 24)
-RIGHT_KNEE = range(24, 28)
-LEFT_KNEE = range(28, 32)
+# 매트 좌표계 — sensor_layout.dart 와 같은 값
+# (2026-10-22 좌우 기준 변경: 매트 뒤집은 후 실측, 번호가 작을수록 사용자의 왼쪽)
+LEFT_HIP = range(0, 5)
+RIGHT_HIP = range(5, 10)
+LEFT_THIGH = range(10, 17)
+RIGHT_THIGH = range(17, 24)
+LEFT_KNEE = range(24, 28)
+RIGHT_KNEE = range(28, 32)
 
 RIGHT = list(RIGHT_HIP) + list(RIGHT_THIGH) + list(RIGHT_KNEE)
 LEFT = list(LEFT_HIP) + list(LEFT_THIGH) + list(LEFT_KNEE)

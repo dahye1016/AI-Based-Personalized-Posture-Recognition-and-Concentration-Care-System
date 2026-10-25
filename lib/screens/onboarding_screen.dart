@@ -8,9 +8,12 @@ import '../widgets/bm.dart';
 /// 앱 첫 진입에서 무엇을 해주는 앱인지 3줄로 알린다.
 /// [onStart] 를 넘기면 "시작하기"에서 호출된다(보통 기기 연결/측정으로 이동).
 class OnboardingScreen extends StatelessWidget {
-  const OnboardingScreen({super.key, this.onStart});
+  const OnboardingScreen({super.key, this.onStart, this.onBack});
 
   final VoidCallback? onStart;
+
+  /// 왼쪽 위 뒤로가기. 없으면 버튼을 그리지 않는다.
+  final VoidCallback? onBack;
 
   static const _features = [
     (
@@ -38,7 +41,25 @@ class OnboardingScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 60),
+            // 뒤로가기 (이전 단계로)
+            SizedBox(
+              height: 60,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: onBack == null
+                    ? null
+                    : Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.screen, 12, 0, 0),
+                        child: GestureDetector(
+                          onTap: onBack,
+                          behavior: HitTestBehavior.opaque,
+                          child: const Icon(Icons.arrow_back_rounded,
+                              color: AppColors.textPrimary),
+                        ),
+                      ),
+              ),
+            ),
 
             // ── 브랜드 ───────────────────────────
             Padding(

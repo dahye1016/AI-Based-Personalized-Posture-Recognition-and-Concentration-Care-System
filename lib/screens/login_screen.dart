@@ -11,7 +11,11 @@ import '../widgets/bm.dart';
 /// 이름 / 생년월일 / 성별만 받는다. 비밀번호가 없으므로 계정 복구는 안 된다.
 /// 저장은 [ProfileStore] 로 가고, 지금은 메모리에만 남는다.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.onDone, this.onSkip});
+  const LoginScreen(
+      {super.key, required this.onDone, this.onSkip, this.onBack});
+
+  /// 왼쪽 위 뒤로가기. 없으면 버튼을 그리지 않는다.
+  final VoidCallback? onBack;
 
   final ValueChanged<UserProfile> onDone;
   final VoidCallback? onSkip;
@@ -80,10 +84,29 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // 뒤로가기 (이전 단계로)
+            SizedBox(
+              height: 40,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: widget.onBack == null
+                    ? null
+                    : Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.screen, 12, 0, 0),
+                        child: GestureDetector(
+                          onTap: widget.onBack,
+                          behavior: HitTestBehavior.opaque,
+                          child: const Icon(Icons.arrow_back_rounded,
+                              color: AppColors.textPrimary),
+                        ),
+                      ),
+              ),
+            ),
             // 헤드라인
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.screen, 40, AppSpacing.screen, 30),
+                  AppSpacing.screen, 0, AppSpacing.screen, 30),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

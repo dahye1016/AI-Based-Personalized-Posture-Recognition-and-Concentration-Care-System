@@ -1,24 +1,22 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
+import '../services/sitting_stats.dart';
+import '../services/stretch_pose.dart';
 import '../services/stretch_log.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
+import '../widgets/pose_camera.dart';
 import 'stretch_done_screen.dart';
 import 'stretch_screen.dart';
 
 /// 스트레칭 코칭 — 피그마 「11 스트레칭 코칭」.
 ///
-/// ⚠ 지금은 **카메라와 ML Kit 이 붙지 않은 화면 껍데기**다.
-/// 관절 랜드마크는 고정 좌표로 그린 자리표시자이고, 횟수는 타이머로 센다.
-///
-/// 실제 연동 시 할 일:
-///   1. `camera` 패키지로 프리뷰를 [_PosePreview] 자리에 넣는다.
-///   2. `google_mlkit_pose_detection` 으로 프레임마다 관절 좌표를 얻어
-///      [_landmarks] 를 갱신한다.
-///   3. 관절 각도로 동작 완료를 판정해 [_count] 를 올린다.
-///   4. 영상은 기기에서만 분석하고 저장하지 않는다 (온디바이스 처리 원칙).
+/// 전면 카메라 + ML Kit 관절 인식으로 동작을 확인하고 횟수를 센다.
+///   - 동작마다 판정 규칙은 [StretchPoses] (lib/services/stretch_pose.dart)
+///   - 그 자세를 잠깐 유지했다가 풀면 1회 ([RepCounter])
+///   - 규칙이 없는 동작은 자동으로 세지 않고 '다음 동작'으로 넘긴다
+///   - 영상은 기기에서만 분석하고 저장하지 않는다 (온디바이스 처리 원칙)
 class StretchCoachScreen extends StatefulWidget {
   const StretchCoachScreen({super.key, required this.routine});
 
@@ -34,7 +32,12 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
   int _moveIndex = 0;
   int _count = 0;
   bool _holding = false;
-  Timer? _timer;
+
+  /// 지금 동작의 횟수 판정기. 규칙이 없는 동작이면 null (수동 진행).
+  RepCounter? _counter;
+
+  /// 카메라에 사람이 보이는지 (상체 관절이 잡히는지).
+  bool _personVisible = false;
 
   /// 루틴을 시작한 시각. 완료 화면의 '소요 시간'에 쓴다.
   late final DateTime _startedAt;
@@ -46,21 +49,39 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
   void initState() {
     super.initState();
     _startedAt = DateTime.now();
-    // ML Kit 이 붙기 전까지 진행 상황을 흉내내는 타이머.
-    // 실제 연동 시에는 관절 각도 판정으로 대체한다.
-    _timer = Timer.periodic(const Duration(milliseconds: 1800), (_) {
-      if (!mounted) return;
-      setState(() {
-        _holding = !_holding;
-        if (_holding && _count < _targetCount) _count++;
-      });
-    });
+    _setupCounter();
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+  void _setupCounter() {
+    final check = StretchPoses.checkFor(widget.routine.moves[_moveIndex]);
+    _counter = check == null ? null : RepCounter(check);
+    _holding = false;
+  }
+
+  /// [PoseCamera] 가 프레임마다 부른다.
+  void _onPose(Pose? pose, DateTime at) {
+    final visible = pose != null && PoseView(pose).upperBodyVisible;
+    var holding = false;
+    var count = _count;
+    final counter = _counter;
+    if (pose != null && counter != null && count < _targetCount) {
+      if (counter.add(pose, at)) count++;
+      holding = counter.holding;
+    }
+    if (visible != _personVisible || holding != _holding || count != _count) {
+      setState(() {
+        _personVisible = visible;
+        _holding = holding;
+        _count = count;
+      });
+    }
+  }
+
+  String get _badgeText {
+    if (!_personVisible) return '상체가 화면에 보이게 앉아주세요';
+    if (_counter == null) return '천천히 따라 하고 다음 동작으로 넘어가요';
+    if (_count >= _targetCount) return '완료! 다음 동작으로 넘어가요';
+    return _holding ? '좋아요 · 그대로 유지' : '자세를 잡아주세요';
   }
 
   void _next({bool skipped = false}) {
@@ -70,6 +91,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
       setState(() {
         _moveIndex++;
         _count = 0;
+        _setupCounter();
       });
     } else {
       _finish();
@@ -78,6 +100,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
 
   /// 마지막 동작까지 끝났다. 완료 화면(11-D)으로 교체한다.
   void _finish() {
+    SittingStats.instance.recordStretch();
     final total = widget.routine.moves.length;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -105,7 +128,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
           Expanded(
             child: Stack(
               children: [
-                const Positioned.fill(child: _PosePreview()),
+                Positioned.fill(child: PoseCamera(onPose: _onPose)),
 
                 // 상단 바
                 Positioned(
@@ -143,7 +166,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                   child: Center(
                     child: AnimatedOpacity(
                       duration: const Duration(milliseconds: 200),
-                      opacity: _holding ? 1 : 0.35,
+                      opacity: _holding || _count >= _targetCount ? 1 : 0.6,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 18, vertical: 10),
@@ -152,7 +175,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          _holding ? '좋아요 · 그대로 유지' : '자세를 잡아주세요',
+                          _badgeText,
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -203,7 +226,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                         ],
                       ),
                     ),
-                    Text('$_count / $_targetCount회',
+                    Text(_counter == null ? '자유 동작' : '$_count / $_targetCount회',
                         style: AppText.display.copyWith(
                           fontSize: 22,
                           color: AppColors.primary,
@@ -294,109 +317,6 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
         '팔 양 옆으로 늘리기' => '손끝까지 쭉 뻗고 어깨는 아래로 내려주세요. 가슴을 활짝 열어줍니다.',
         _ => '천천히, 반동 없이. 통증이 느껴지면 바로 멈추세요.',
       };
-}
-
-/// 카메라 프리뷰 자리표시자 — 실루엣 + 관절 랜드마크.
-///
-/// 실제 연동 시 이 위젯을 `CameraPreview` + 랜드마크 오버레이로 교체한다.
-class _PosePreview extends StatelessWidget {
-  const _PosePreview();
-
-  /// 프리뷰 기준 좌표(비율 0~1). ML Kit 이 붙으면 실제 관절 좌표로 대체된다.
-  static const _landmarks = <Offset>[
-    Offset(0.56, 0.30), // 머리
-    Offset(0.50, 0.38), // 목
-    Offset(0.43, 0.40), // 왼어깨
-    Offset(0.61, 0.40), // 오른어깨
-    Offset(0.36, 0.50), // 왼팔꿈치
-    Offset(0.64, 0.49), // 오른팔꿈치
-    Offset(0.35, 0.60), // 왼손목
-    Offset(0.62, 0.37), // 오른손 (머리 쪽)
-    Offset(0.45, 0.62), // 왼골반
-    Offset(0.55, 0.62), // 오른골반
-    Offset(0.45, 0.75), // 왼무릎
-    Offset(0.55, 0.75), // 오른무릎
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final w = c.maxWidth, h = c.maxHeight;
-        return Stack(
-          children: [
-            // 실루엣
-            Positioned(
-              left: w * 0.48,
-              top: h * 0.25,
-              child: _Blob(size: Size(w * 0.14, w * 0.14), round: true),
-            ),
-            Positioned(
-              left: w * 0.40,
-              top: h * 0.36,
-              child: _Blob(size: Size(w * 0.20, h * 0.20)),
-            ),
-            Positioned(
-              left: w * 0.31,
-              top: h * 0.38,
-              child: _Blob(size: Size(w * 0.07, h * 0.18)),
-            ),
-            Positioned(
-              left: w * 0.61,
-              top: h * 0.36,
-              child: _Blob(size: Size(w * 0.07, h * 0.11)),
-            ),
-            Positioned(
-              left: w * 0.42,
-              top: h * 0.56,
-              child: _Blob(size: Size(w * 0.07, h * 0.20)),
-            ),
-            Positioned(
-              left: w * 0.51,
-              top: h * 0.56,
-              child: _Blob(size: Size(w * 0.07, h * 0.20)),
-            ),
-
-            // 관절 랜드마크
-            for (final p in _landmarks)
-              Positioned(
-                left: w * p.dx - 5,
-                top: h * p.dy - 5,
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _Blob extends StatelessWidget {
-  const _Blob({required this.size, this.round = false});
-
-  final Size size;
-  final bool round;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size.width,
-      height: size.height,
-      decoration: BoxDecoration(
-        color: const Color(0xFF383D45),
-        borderRadius:
-            BorderRadius.circular(round ? size.width : size.width * 0.4),
-      ),
-    );
-  }
 }
 
 class _GlassButton extends StatelessWidget {

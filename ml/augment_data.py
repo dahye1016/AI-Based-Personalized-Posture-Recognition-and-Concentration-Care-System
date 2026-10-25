@@ -1,13 +1,16 @@
 """
-augment_data.py — 32채널 방석 매트 실측 데이터 증강기 (Mixup 중심)
+augment_data.py — 64채널(좌석+등받이) 실측 데이터 증강기 (Mixup 중심)
 
-압력 매트 고장으로 추가 수집이 불가능한 상황에서, 3명(예원·아로·다혜)의
-7자세 실측만으로 학습 가능한 규모의 데이터셋을 만든다.
+4명(dahye·aro·yewon·junseo)의 8자세(거북목 포함) 64ch 실측으로
+학습 가능한 규모의 데이터셋을 만든다.
 
-입력 : data/raw/{person}_{posture}_{trial}.csv
-        컬럼 = frame, timestamp, ch0..ch31, person, posture, trial
-출력 : data/augmented/augmented_dataset.csv  (원본 컬럼 + source)
-        data/augmented/summary.json
+입력 : data/raw_64ch/{person}_{posture}_{trial}.csv
+        컬럼 = frame, timestamp, ch0..ch63, person, posture, trial
+        ★ data/raw/ 32ch 는 옛 좌우 기준이라 쓰지 않는다 (data/raw/README.md).
+          32ch 파일을 넣으면 "32ch 파일" 사유로 건너뛴다.
+출력 : data/augmented_64ch/augmented_64ch_dataset.csv  (원본 컬럼 + source)
+        data/augmented_64ch/summary_64ch.json
+        ★ 옛 32ch 출력(data/augmented/augmented_dataset.csv)과 경로·파일명 모두 다르다.
 
 증강 계열(source 컬럼)
     original      원본 프레임 그대로
@@ -15,12 +18,27 @@ augment_data.py — 32채널 방석 매트 실측 데이터 증강기 (Mixup 중
     mixup2/3      같은 자세 안에서 2~3개 녹화를 alpha 가중평균
     mixup2+jitter 위 결과에 스케일/노이즈/채널드롭 적용
 
-채널 배치 (ch0 이 몸 바깥)
-    0~4   오른엉덩이   5~9   왼엉덩이
-    10~16 오른허벅지   17~23 왼허벅지
-    24~27 오른무릎     28~31 왼무릎
+채널 배치 — 2026-10-22 좌우 기준 (lib/models/sensor_layout.dart 와 같음)
+    좌석  : 번호가 작을수록 사용자의 왼쪽 (ch0 이 왼쪽 몸 바깥)
+        0~4   왼엉덩이     5~9   오른엉덩이
+        10~16 왼허벅지     17~23 오른허벅지
+        24~27 왼무릎       28~31 오른무릎
+    등받이: 번호가 작을수록 사용자의 오른쪽 (등을 대고 앉으므로 좌석과 반대)
+        32~36 오른허리     37~41 왼허리       (실측)
+        42~48 오른중간     49~55 왼중간       (추정 — 탭 테스트 미실시)
+        56~59 오른어깨     60~63 왼어깨       (실측)
 
-좌우 반전 규칙 — 부위 '안'에서도 순서를 뒤집는다.
+좌우 반전 규칙 — 가로 줄 6개를 각각 통째로 뒤집는다.
+    좌석  : ch0..9 / ch10..23 / ch24..31        (10 / 14 / 8)
+    등받이: ch32..41 / ch42..55 / ch56..63      (10 / 14 / 8)
+
+    줄 뒤집기는 번호가 어느 방향으로 증가하든 같은 물리적 거울 반전이다.
+    그래서 등받이의 좌우가 좌석과 반대라는 점은 반전 순열에 따로 반영하지 않는다
+    (따로 한 번 더 뒤집으면 등받이만 반전이 안 된 불가능한 샘플이 된다).
+    반전은 같은 줄 안에서만 일어나고 좌석↔등받이로 넘어가지 않는다.
+    중간 줄 좌우 경계(48|49, 추정)가 틀려도 순열은 같다.
+
+    부위 '안'에서도 순서를 뒤집어야 하는 근거 (32ch 옛 데이터·옛 좌우 기준 관찰):
     실측 채널별 zero-rate 가 부위마다 좌우 대칭으로 단조 변화한다.
         오른엉덩이 [52.5 29.3 23.8 16.5 14.7] %  ← ch0 이 가장 자주 0
         왼엉덩이   [16.7 19.9 22.2 27.4 54.2] %  ← ch9 가 가장 자주 0
@@ -32,9 +50,8 @@ augment_data.py — 32채널 방석 매트 실측 데이터 증강기 (Mixup 중
     왼쪽 부위에서는 마지막 인덱스(ch9/ch23/ch31)다. 따라서 부위를 교환할 때
     부위 안 순서도 뒤집어야 바깥↔바깥, 안쪽↔안쪽이 맞물린다.
 
-    결과적으로 반전은 "가로 줄 세 개를 각각 뒤집기"와 정확히 같다.
-        엉덩이 줄 ch0..ch9 뒤집기 / 허벅지 줄 ch10..ch23 뒤집기 / 무릎 줄 ch24..ch31 뒤집기
-    매트가 좌→우로 이어지는 3열 배선이라는 물리 구조와 일치한다.
+    결과적으로 반전은 "가로 줄을 각각 뒤집기"와 정확히 같다.
+    매트가 한쪽 끝→반대쪽 끝으로 이어지는 3열 배선이라는 물리 구조와 일치한다.
 
 사용 예:
     python ml/augment_data.py
@@ -62,21 +79,25 @@ except ImportError:
 # =====================================================================
 # 0. 상수
 # =====================================================================
-N_CH = 32
+N_CH = 64                # 좌석 ch0~31 + 등받이 ch32~63
 CH_COLS = [f"ch{i}" for i in range(N_CH)]
 OUT_COLS = ["frame", "timestamp"] + CH_COLS + ["person", "posture", "trial", "source"]
 
 ADC_MAX = 4095          # 12bit ADC 상한
 NOISE_CUT = 20          # 펌웨어 노이즈컷: raw < 20 -> 0
 
-# 좌우 반전으로 서로 교환되는 부위 쌍 (오른쪽 슬라이스, 왼쪽 슬라이스)
-REGION_PAIRS = [
-    ("hip",   (0, 5),   (5, 10)),
-    ("thigh", (10, 17), (17, 24)),
-    ("knee",  (24, 28), (28, 32)),
+# 좌우 반전 시 통째로 뒤집는 가로 줄 (시작, 끝) — 반열린 구간
+FLIP_ROWS = [
+    ("seat_hip",      (0, 10)),    # 10
+    ("seat_thigh",    (10, 24)),   # 14
+    ("seat_knee",     (24, 32)),   # 8
+    ("back_waist",    (32, 42)),   # 10
+    ("back_mid",      (42, 56)),   # 14
+    ("back_shoulder", (56, 64)),   # 8
 ]
 
 # 좌우 반전 시 라벨 스왑 (없으면 유지)
+# turtle_neck(거북목)은 좌우 대칭 자세라 스왑하지 않는다 — 반전본도 turtle_neck.
 LABEL_SWAP = {
     "cross_leg_right": "cross_leg_left",
     "cross_leg_left":  "cross_leg_right",
@@ -92,11 +113,12 @@ EXCLUDE_POSTURES = {"press_check"}
 
 
 def build_flip_index():
-    """좌우 반전 채널 순열. 부위 교환 + 부위 안 순서 뒤집기."""
+    """좌우 반전 채널 순열. 가로 줄마다 통째로 뒤집는다."""
+    covered = sorted(c for _, (a, b) in FLIP_ROWS for c in range(a, b))
+    assert covered == list(range(N_CH)), "가로 줄이 0~63 을 빈틈·중복 없이 덮어야 한다"
     idx = np.empty(N_CH, dtype=np.int64)
-    for _, (ra, rb), (la, lb) in REGION_PAIRS:
-        idx[ra:rb] = np.arange(la, lb)[::-1]   # 오른쪽 자리 <- 뒤집은 왼쪽
-        idx[la:lb] = np.arange(ra, rb)[::-1]   # 왼쪽 자리 <- 뒤집은 오른쪽
+    for _, (a, b) in FLIP_ROWS:
+        idx[a:b] = np.arange(a, b)[::-1]
     assert np.array_equal(idx[idx], np.arange(N_CH)), "반전은 두 번 적용하면 원래대로여야 한다"
     return idx
 
@@ -116,7 +138,7 @@ class Recording:
         self.person = person
         self.posture = posture
         self.trial = trial
-        self.values = values            # (n_frames, 32) float32
+        self.values = values            # (n_frames, 64) float32
         self.timestamps = timestamps    # (n_frames,) float64
         self.flipped = flipped
 
@@ -142,7 +164,7 @@ class Recording:
 
 
 def load_recordings(raw_dir):
-    """data/raw/*.csv 전체 스캔. discarded/ 는 건드리지 않는다."""
+    """raw_dir/*.csv 전체 스캔. discarded/ 는 건드리지 않는다."""
     paths = sorted(glob.glob(os.path.join(raw_dir, "*.csv")))
     if not paths:
         sys.exit(f"{raw_dir} 에 CSV 가 없습니다.")
@@ -152,7 +174,11 @@ def load_recordings(raw_dir):
         df = pd.read_csv(path)
         missing = [c for c in CH_COLS + ["person", "posture", "trial"] if c not in df.columns]
         if missing:
-            skipped.append((os.path.basename(path), f"컬럼 누락 {missing[:3]}"))
+            if "ch31" in df.columns and "ch32" not in df.columns:
+                why = "32ch 파일 — 64ch 아님 (옛 좌우 기준일 수 있음)"
+            else:
+                why = f"컬럼 누락 {missing[:3]}"
+            skipped.append((os.path.basename(path), why))
             continue
 
         posture = str(df["posture"].iloc[0])
@@ -401,7 +427,11 @@ def print_summary(recs, skipped, before, after, stats, args, out_path):
         worst = [p for p, c in after.items() if c == lo]
         print(f"  !! 경고: 자세별 불균형이 {args.imbalance_warn}x 를 넘습니다. "
               f"부족한 자세 = {', '.join(worst)}")
-        print(f"  !! 학습 시 class weight 나 오버샘플링을 쓰거나 --no-balance 설정을 재검토하세요.")
+        print(f"  !! 학습 시 class weight 필요 — 자세별 행 수는 summary_64ch.json 의 "
+              f"rows_by_posture 에 있습니다.")
+        if any(p in ZERO_POSTURES for p in worst):
+            print(f"  !! ({', '.join(sorted(ZERO_POSTURES))} 는 전 채널 0 이라 mixup 하지 않아 "
+                  f"원본만 있습니다 — 의도된 동작)")
     else:
         print("  OK: 허용 범위 안입니다.")
 
@@ -413,9 +443,9 @@ def print_summary(recs, skipped, before, after, stats, args, out_path):
 # 6. main
 # =====================================================================
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description="32채널 방석 매트 실측 데이터 Mixup 증강")
-    p.add_argument("--raw-dir", default="data/raw")
-    p.add_argument("--out-dir", default="data/augmented")
+    p = argparse.ArgumentParser(description="64채널(좌석+등받이) 실측 데이터 Mixup 증강")
+    p.add_argument("--raw-dir", default="data/raw_64ch")
+    p.add_argument("--out-dir", default="data/augmented_64ch")
     p.add_argument("--target-multiplier", type=float, default=20.0,
                    help="자세별 목표 샘플 수 배수 (기본 20)")
     p.add_argument("--balance", dest="balance", action="store_true", default=True,
@@ -506,12 +536,14 @@ def main(argv=None):
     stats["person_tags"] = Counter(out["person"])
     stats["n_person_tags"] = len(stats["person_tags"])
 
-    out_path = os.path.join(args.out_dir, "augmented_dataset.csv")
+    out_path = os.path.join(args.out_dir, "augmented_64ch_dataset.csv")
     if not args.dry_run:
         os.makedirs(args.out_dir, exist_ok=True)
         out.to_csv(out_path, index=False)
-        with open(os.path.join(args.out_dir, "summary.json"), "w", encoding="utf-8") as fp:
+        with open(os.path.join(args.out_dir, "summary_64ch.json"), "w", encoding="utf-8") as fp:
             json.dump({
+                "n_channels": N_CH,
+                "layout": "2026-10-22 좌우 기준 (sensor_layout.dart)",
                 "seed": args.seed,
                 "target_multiplier": args.target_multiplier,
                 "balance": args.balance,
@@ -521,6 +553,11 @@ def main(argv=None):
                 "flip_index": FLIP_INDEX.tolist(),
                 "before": dict(before),
                 "after": dict(after),
+                # 학습 쪽 class weight 계산용 — 증강 후 자세별 최종 행 수
+                "rows_by_posture": {p: int(after[p]) for p in sorted(after)},
+                "total_rows": int(len(out)),
+                "imbalance_ratio": round(max(after.values()) / max(min(after.values()), 1), 3),
+                "mixup_excluded_postures": sorted(ZERO_POSTURES),
                 "targets": targets,
                 "donor_pool": stats["pool"],
                 "donor_combos": stats["donor_combos"],

@@ -45,10 +45,36 @@ class PostureModel {
     return PostureModel._(interpreter, pre, smoothWindow);
   }
 
+  /// 좌석 매트 줄 구간 (엉덩이 0~9 / 허벅지 10~23 / 무릎 24~31).
+  static const List<List<int>> _seatRows = [
+    [0, 9],
+    [10, 23],
+    [24, 31],
+  ];
+
+  /// 매트를 뒤집어 재설치(2026-10-22)하기 전 데이터로 학습된 32ch 모델이라
+  /// 지금 매트와 좌우가 반대다 (오른쪽 기대기 → 왼쪽으로 판정).
+  /// 줄마다 채널 순서를 뒤집어 학습 때 방향으로 맞춘 뒤 넣는다.
+  /// 새 매트 기준으로 다시 학습한 모델로 바꾸면 false 로 둘 것.
+  static const bool mirrorForOldMat = true;
+
+  static List<int> _mirrorRows(List<int> ch) {
+    final out = List<int>.of(ch);
+    for (final r in _seatRows) {
+      final a = r[0], b = r[1];
+      for (var k = a; k <= b; k++) {
+        out[k] = ch[a + b - k];
+      }
+    }
+    return out;
+  }
+
   /// 프레임 1개 -> 원시 판정 (안정화 없음). 채널 수가 다르면 null.
   PostureClass? predictRaw(SensorFrame frame) {
     if (frame.channels.length != _pre.channelCount) return null;
-    final input = _pre.toInput(frame.channels);
+    final ch =
+        mirrorForOldMat ? _mirrorRows(frame.channels) : frame.channels;
+    final input = _pre.toInput(ch);
 
     // 모델 입력 [1, 64, 1] 형태로 감싼다.
     final shaped = [

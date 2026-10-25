@@ -21,7 +21,12 @@ class CalibrationScreen extends StatefulWidget {
     required this.ble,
     this.duration = const Duration(seconds: 10),
     this.onDone,
+    this.onBack,
   });
+
+  /// 안내 화면의 뒤로가기. 앱 진입 흐름(AppFlow)에서는 이전 단계로 돌아간다.
+  /// 없으면 Navigator 로 닫는다(다른 화면에서 push 로 연 경우).
+  final VoidCallback? onBack;
 
   /// 측정용 BLE 연결. 연결·해제는 호출한 쪽(AppFlow)이 맡는다.
   final BleService ble;
@@ -41,6 +46,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   _Step _step = _Step.intro;
 
   StreamSubscription<List<int>>? _sub;
+
+  /// 등받이(PoseLab-Back) 프레임 — 측정 화면 표시용. 기준값 계산에는 아직 안 쓴다.
+  StreamSubscription<List<int>>? _backSub;
+  List<double> _backLevels = const [];
   Timer? _ticker;
   Stopwatch? _watch;
 
@@ -83,6 +92,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _max = List<int>.filled(SensorLayout.nChannels, 0);
     _sum = List<double>.filled(SensorLayout.nChannels, 0);
     _levels = List<double>.filled(SensorLayout.nChannels, 0);
+    _backLevels = List<double>.filled(SensorLayout.nBackChannels, 0);
     _frames = 0;
     _unstable = 0;
     _baseTotal = null;
@@ -94,6 +104,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     _watch = Stopwatch()..start();
     _sub = widget.ble.frames.map((f) => f.channels).listen(_onFrame);
+    _backSub =
+        widget.ble.backFrames.map((f) => f.channels).listen(_onBackFrame);
     _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
       if (!mounted) return;
       if (_watch!.elapsed >= widget.duration) {
@@ -102,6 +114,20 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         setState(() {});
       }
     });
+  }
+
+  /// 등받이 32채널을 0~1 로 정규화해 화면에만 반영한다.
+  void _onBackFrame(List<int> ch) {
+    if (_step != _Step.measuring) return;
+    var maxV = 1;
+    for (final v in ch) {
+      if (v > maxV) maxV = v;
+    }
+    final levels = List<double>.filled(SensorLayout.nBackChannels, 0);
+    for (var i = 0; i < levels.length && i < ch.length; i++) {
+      levels[i] = (ch[i] / maxV).clamp(0.0, 1.0);
+    }
+    if (mounted) setState(() => _backLevels = levels);
   }
 
   void _onFrame(List<int> ch) {
@@ -210,6 +236,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _ticker = null;
     _sub?.cancel();
     _sub = null;
+    _backSub?.cancel();
+    _backSub = null;
     _watch?.stop();
   }
 
@@ -227,13 +255,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         _Step.intro => _IntroView(
             seconds: widget.duration.inSeconds,
             onStart: _start,
-            onClose: () => Navigator.of(context).maybePop(),
+            onClose: widget.onBack ?? () => Navigator.of(context).maybePop(),
           ),
         _Step.measuring => _MeasuringView(
             remaining: _remaining,
             ratio: _ratio,
             stable: _stable,
             levels: _levels,
+            backLevels: _backLevels,
             onCancel: () {
               _stop();
               setState(() => _step = _Step.intro);
@@ -489,16 +518,54 @@ class _MeasuringView extends StatelessWidget {
     required this.ratio,
     required this.stable,
     required this.levels,
+    required this.backLevels,
     required this.onCancel,
   });
 
   final Duration remaining;
   final double ratio;
   final bool stable;
+
+  /// 좌석 ch0~31 (0~1).
   final List<double> levels;
+
+  /// 등받이 보드 ch0~31 (0~1) = 64ch 기준 ch32~63.
+  final List<double> backLevels;
   final VoidCallback onCancel;
 
-  static const _shown = 12;
+  /// 센서 32채널을 8열 x 4줄로 그린다. [first] 는 화면에 적을 첫 채널 번호.
+  Widget _matGrid(String title, List<double> lv, int first) {
+    final hasData = lv.any((v) => v > 0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+            hasData ? title : '$title (신호 대기)',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            )),
+        const SizedBox(height: 6),
+        for (var r = 0; r < 4; r++) ...[
+          if (r > 0) const SizedBox(height: 6),
+          Row(
+            children: [
+              for (var c = 0; c < 8; c++) ...[
+                if (c > 0) const SizedBox(width: 4),
+                Expanded(
+                  child: _ChannelCell(
+                    index: first + r * 8 + c,
+                    level: (r * 8 + c) < lv.length ? lv[r * 8 + c] : 0,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -573,35 +640,19 @@ class _MeasuringView extends StatelessWidget {
             child: BmSoftCard(
               child: Column(
                 children: [
-                  BmCardCaption(
+                  const BmCardCaption(
                     title: '실시간 압력',
-                    trailing: levels.isEmpty
-                        ? '신호 대기 중'
-                        : '${levels.length} ch · 앞 $_shown채널',
+                    trailing: '등받이 + 좌석',
                   ),
                   const SizedBox(height: 12),
-                  for (var r = 0; r < 2; r++) ...[
-                    if (r > 0) const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        for (var c = 0; c < 6; c++) ...[
-                          if (c > 0) const SizedBox(width: 6),
-                          Expanded(
-                            child: _ChannelCell(
-                              index: r * 6 + c,
-                              level: (r * 6 + c) < levels.length
-                                  ? levels[r * 6 + c]
-                                  : 0,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
+                  _matGrid('등받이', backLevels, 32),
+                  const SizedBox(height: 14),
+                  _matGrid('좌석', levels, 0),
                 ],
               ),
             ),
           ),
+          // BmScreen 이 스크롤을 감싸므로 작은 화면에서도 잘리지 않는다.
           const Spacer(),
           Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -626,15 +677,12 @@ class _ChannelCell extends StatelessWidget {
       children: [
         AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          height: 38,
+          height: 22,
           decoration: BoxDecoration(
             color: AppColors.heat(level),
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(5),
           ),
         ),
-        const SizedBox(height: 5),
-        Text('CH$index',
-            style: AppText.caption.copyWith(fontSize: 9)),
       ],
     );
   }
@@ -729,15 +777,6 @@ class _DoneView extends StatelessWidget {
                       value: '${result.channelMax.length} ch'),
                 ],
               ),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(
-                AppSpacing.screen, 12, AppSpacing.screen, 0),
-            child: Text(
-              '기준값은 아직 서버에 저장되지 않습니다. (캘리브레이션 API 연동 예정)',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
             ),
           ),
           const Spacer(),
