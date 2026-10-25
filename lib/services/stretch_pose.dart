@@ -96,7 +96,7 @@ class StretchPoses {
         '팔 양 옆으로 늘리기' => const MoveRule(_armsSide, 0.1, ''),
         '팔 위로 뻗기' => const MoveRule(_armsUp, 0.0, ''),
         '몸통 옆으로 늘이기' => const MoveRule(_torsoSide, 5, '°'),
-        '가슴 열기' => const MoveRule(_chestOpen, 1.05, ''),
+        '가슴 열기' => const MoveRule(_chestOpen, 1.3, ''),
         '몸통 비틀기' => const MoveRule(_twist, 0.1, ''),
         _ => null,
       };
@@ -146,16 +146,23 @@ class StretchPoses {
     return PoseView.tiltDeg(a, b);
   }
 
-  /// 양 팔꿈치 사이 거리 / 어깨너비. 팔꿈치를 벌려 가슴을 열면 커진다.
-  /// (팔꿈치가 어깨보다 한참 아래로 처지면 0)
+  /// W 모양(팔꿈치를 어깨 높이로 벌리고 손은 위로)일 때만 양 팔꿈치 거리 / 어깨너비,
+  /// 아니면 0. 팔을 내려놓고 앉아 있어도 팔꿈치는 어깨보다 살짝 바깥이라
+  /// 거리만 보면 늘 동작 중으로 잡혀서 높이·손 위치 조건을 함께 본다.
+  /// 화면 밖이라 ML Kit 이 추측한 관절(확신도 낮음)은 쓰지 않는다.
   static double? _chestOpen(PoseView p) {
-    final ls = p.lSh, rs = p.rSh, le = p.lEl, re = p.rEl, w = p.shoulderWidth;
-    if (ls == null || rs == null || le == null || re == null || w == null) {
-      return null;
-    }
+    final strict = PoseView(p.pose, minLikelihood: 0.6);
+    final ls = strict.lSh, rs = strict.rSh, le = strict.lEl, re = strict.rEl;
+    final lw = strict._lm(PoseLandmarkType.leftWrist);
+    final rw = strict._lm(PoseLandmarkType.rightWrist);
+    final w = strict.shoulderWidth;
+    if (ls == null || rs == null || w == null) return null;
+    if (le == null || re == null || lw == null || rw == null) return 0;
     final shY = (ls.y + rs.y) / 2;
-    final dropped = ((le.y + re.y) / 2 - shY) / w > 0.9;
-    if (dropped) return 0;
+    final elbowsAtShoulder =
+        (le.y - shY).abs() / w < 0.35 && (re.y - shY).abs() / w < 0.35;
+    final handsUp = lw.y < le.y && rw.y < re.y;
+    if (!elbowsAtShoulder || !handsUp) return 0;
     return (le.x - re.x).abs() / w;
   }
 
