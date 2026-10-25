@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
@@ -7,6 +8,7 @@ import '../services/stretch_log.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
 import '../widgets/pose_camera.dart';
+import '../widgets/stretch_guide.dart';
 import 'stretch_done_screen.dart';
 import 'stretch_screen.dart';
 
@@ -53,28 +55,45 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
   }
 
   void _setupCounter() {
-    final check = StretchPoses.checkFor(widget.routine.moves[_moveIndex]);
-    _counter = check == null ? null : RepCounter(check);
+    final rule = StretchPoses.ruleFor(widget.routine.moves[_moveIndex]);
+    _counter = rule == null ? null : RepCounter(rule);
     _holding = false;
   }
 
   /// [PoseCamera] 가 프레임마다 부른다.
-  void _onPose(Pose? pose, DateTime at) {
+  void _onPose(Pose? pose, HeadAngles? head, DateTime at) {
     final visible = pose != null && PoseView(pose).upperBodyVisible;
     var holding = false;
     var count = _count;
     final counter = _counter;
-    if (pose != null && counter != null && count < _targetCount) {
-      if (counter.add(pose, at)) count++;
+    if (counter != null && count < _targetCount) {
+      final done = counter.rule.usesFace
+          ? counter.addHead(head?.pitch, at)
+          : (pose != null && counter.add(pose, at));
+      if (done) count++;
       holding = counter.holding;
     }
-    if (visible != _personVisible || holding != _holding || count != _count) {
+    // 디버그 빌드에서는 판정값을 화면에 띄우므로 매 프레임 다시 그린다.
+    if (kDebugMode ||
+        visible != _personVisible ||
+        holding != _holding ||
+        count != _count) {
       setState(() {
         _personVisible = visible;
         _holding = holding;
         _count = count;
       });
     }
+  }
+
+  String get _debugText {
+    final c = _counter!;
+    final v = c.lastValue;
+    final u = c.rule.unit;
+    String f(double x) => u == '°' ? x.toStringAsFixed(0) : x.toStringAsFixed(2);
+    return v == null
+        ? '판정값: ${c.rule.usesFace ? '얼굴' : '관절'} 안 보임 (기준 ${f(c.rule.threshold)}$u)'
+        : '판정값 ${f(v)}$u / 기준 ${f(c.rule.threshold)}$u';
   }
 
   String get _badgeText {
@@ -128,7 +147,20 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
           Expanded(
             child: Stack(
               children: [
-                Positioned.fill(child: PoseCamera(onPose: _onPose)),
+                Positioned.fill(
+                  child: PoseCamera(
+                    onPose: _onPose,
+                    detectFace: _counter?.rule.usesFace ?? false,
+                  ),
+                ),
+
+                // 목표 자세 가이드 (흐린 사람 모양) — 잘 따라 하면 민트색
+                Positioned.fill(
+                  child: StretchGuide(
+                    move: moves[_moveIndex],
+                    active: _holding,
+                  ),
+                ),
 
                 // 상단 바
                 Positioned(
@@ -157,6 +189,17 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                     child: _GlassLabel(text: '기기에서만 분석 · 영상은 저장되지 않아요'),
                   ),
                 ),
+
+                // 판정값 (디버그 빌드에서만) — 기준을 맞출 때 본다.
+                if (kDebugMode && _counter != null)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 76,
+                    child: Center(
+                      child: _GlassLabel(text: _debugText),
+                    ),
+                  ),
 
                 // 판정 배지
                 Positioned(

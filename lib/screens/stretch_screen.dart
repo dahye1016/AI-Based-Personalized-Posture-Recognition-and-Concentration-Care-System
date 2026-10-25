@@ -10,7 +10,10 @@ import 'stretch_coach_screen.dart';
 /// 자세 유형별 루틴을 고르면 카메라 코칭 화면([StretchCoachScreen])으로 넘어간다.
 /// 어떤 루틴을 위로 올릴지는 나중에 리포트의 "가장 많이 나온 나쁜 자세"로 정한다.
 class StretchScreen extends StatelessWidget {
-  const StretchScreen({super.key});
+  const StretchScreen({super.key, this.onBack});
+
+  /// 하단 탭으로 열렸을 때 '뒤로' = 실시간 탭으로. 없고 push 로 열렸으면 이전 화면으로.
+  final VoidCallback? onBack;
 
   static const routines = <StretchRoutine>[
     StretchRoutine(
@@ -62,6 +65,7 @@ class StretchScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             BmHeader(
+                leading: onBack != null || Navigator.of(context).canPop() ? BmBackButton(onTap: onBack) : null,
                 eyebrow: '오늘 ${top.posture.label}가 40분',
                 title: '${top.title.split(' ').first}부터 풀어볼까요'),
 
@@ -225,14 +229,9 @@ class _RoutineCard extends StatelessWidget {
                 color: routine.color.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(13),
               ),
-              child: Text(
-                routine.posture.label.substring(0, 1),
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: routine.color,
-                ),
-              ),
+              // 글자 없이 시작 버튼만 (자세 첫 글자 표시는 뺐음)
+              child: Icon(Icons.play_arrow_rounded,
+                  size: 24, color: routine.color),
             ),
             const SizedBox(width: 14),
             Expanded(

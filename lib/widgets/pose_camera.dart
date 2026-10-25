@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 import '../theme/app_theme.dart';
@@ -11,11 +12,24 @@ import '../theme/app_theme.dart';
 /// 전면 카메라 프리뷰 + ML Kit 관절 인식 + 관절 오버레이.
 ///
 /// 프레임마다 [onPose] 로 인식 결과(사람이 없으면 null)를 넘긴다.
+/// [detectFace] 가 켜져 있으면 얼굴 인식도 같이 돌려 고개 각도([HeadAngles])를 넘긴다.
+
+/// 고개 각도 (도). ML Kit Face Detection 의 오일러 각.
+///   pitch(X): 위로 들수록 + / roll(Z): 옆으로 기울인 각도.
+class HeadAngles {
+  const HeadAngles(this.pitch, this.roll);
+  final double pitch;
+  final double roll;
+}
+
 /// 영상은 기기 안에서만 분석하고 저장·전송하지 않는다.
 class PoseCamera extends StatefulWidget {
-  const PoseCamera({super.key, required this.onPose});
+  const PoseCamera({super.key, required this.onPose, this.detectFace = false});
 
-  final void Function(Pose? pose, DateTime at) onPose;
+  final void Function(Pose? pose, HeadAngles? head, DateTime at) onPose;
+
+  /// 얼굴 인식(고개 각도)도 할지. 목 동작에서만 켠다 (프레임당 계산이 늘어남).
+  final bool detectFace;
 
   @override
   State<PoseCamera> createState() => _PoseCameraState();
@@ -26,6 +40,9 @@ class _PoseCameraState extends State<PoseCamera> with WidgetsBindingObserver {
   CameraDescription? _camera;
   final PoseDetector _detector = PoseDetector(
     options: PoseDetectorOptions(mode: PoseDetectionMode.stream),
+  );
+  final FaceDetector _faceDetector = FaceDetector(
+    options: FaceDetectorOptions(performanceMode: FaceDetectorMode.fast),
   );
   bool _busy = false;
   Pose? _pose;
@@ -87,9 +104,18 @@ class _PoseCameraState extends State<PoseCamera> with WidgetsBindingObserver {
       final input = _toInputImage(image);
       if (input == null) return;
       final poses = await _detector.processImage(input);
+      HeadAngles? head;
+      if (widget.detectFace) {
+        final faces = await _faceDetector.processImage(input);
+        if (faces.isNotEmpty) {
+          final f = faces.first;
+          final x = f.headEulerAngleX, z = f.headEulerAngleZ;
+          if (x != null && z != null) head = HeadAngles(x, z);
+        }
+      }
       if (!mounted) return;
       final pose = poses.isEmpty ? null : poses.first;
-      widget.onPose(pose, DateTime.now());
+      widget.onPose(pose, head, DateTime.now());
       setState(() {
         _pose = pose;
         _imageSize = input.metadata!.size;
@@ -152,6 +178,7 @@ class _PoseCameraState extends State<PoseCamera> with WidgetsBindingObserver {
     c?.stopImageStream().catchError((_) {});
     c?.dispose();
     _detector.close();
+    _faceDetector.close();
     super.dispose();
   }
 
@@ -189,7 +216,10 @@ class _PoseCameraState extends State<PoseCamera> with WidgetsBindingObserver {
                     pose: _pose!,
                     imageSize: _imageSize!,
                     rotation: _rotation,
-                    mirror: _camera?.lensDirection == CameraLensDirection.front,
+                    // 전면 카메라 좌우 반전: 아이폰은 ML Kit 이 받는 영상이 이미
+                    // 미리보기와 같은 방향이라 뒤집지 않는다 (뒤집으면 좌우가 반대로 찍힘).
+                    mirror: !Platform.isIOS &&
+                        _camera?.lensDirection == CameraLensDirection.front,
                   ),
                 ),
             ],

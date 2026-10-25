@@ -113,6 +113,40 @@ class SittingStats extends ChangeNotifier {
   String get userKey => _userKey;
 
   String get _storageKey => '$_prefsKey:$_userKey';
+  String get _goalKey => 'challenge_goal_min:$_userKey';
+
+  /// 집중 챌린지 하루 목표 (정자세 분). 사용자별로 저장.
+  int _goalMin = 30;
+  int get challengeGoalMin => _goalMin;
+
+  Future<void> setChallengeGoal(int minutes) async {
+    _goalMin = minutes;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_goalKey, minutes);
+    } catch (e) {
+      debugPrint('[SittingStats] 목표 저장 실패: $e');
+    }
+  }
+
+  /// 그날 정자세 시간이 목표 이상이면 챌린지 성공.
+  bool achieved(DayStats d) => d.straight.inMinutes >= _goalMin;
+
+  /// 오늘(또는 오늘 아직 못 채웠으면 어제)부터 거꾸로 연속 성공한 날 수.
+  int get streak {
+    var t = _dateOnly(DateTime.now());
+    if (!achieved(_dayOf(t))) t = t.subtract(const Duration(days: 1));
+    var n = 0;
+    while (achieved(_dayOf(t))) {
+      n++;
+      t = t.subtract(const Duration(days: 1));
+    }
+    return n;
+  }
+
+  /// 보관 중인 기록 중 한 번이라도 목표를 채운 날이 있는지.
+  bool get everAchieved => _days.values.any(achieved);
 
   /// 날짜(연·월·일) → 그날 기록.
   final Map<DateTime, DayStats> _days = {};
@@ -205,17 +239,24 @@ class SittingStats extends ChangeNotifier {
     _days.clear();
     _last = null;
     _straightRunMs = 0;
+    _goalMin = 30;
     notifyListeners();
     await load();
   }
 
   // ── 저장 ───────────────────────────────────────────────────────
   /// 지금 사용자의 기록을 불러온다. 실패해도 빈 기록으로 계속 간다.
+  /// 게스트(로그인 안 함)는 저장하지 않으므로 앱을 켤 때마다 빈 기록으로 시작한다.
   Future<void> load() async {
+    if (_userKey == guestKey) return;
     try {
       final prefs = await SharedPreferences.getInstance();
+      _goalMin = prefs.getInt(_goalKey) ?? 30;
       final raw = prefs.getString(_storageKey);
-      if (raw == null) return;
+      if (raw == null) {
+        notifyListeners();
+        return;
+      }
       final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
       for (final j in list) {
         final d = DayStats.fromJson(j);
@@ -235,6 +276,7 @@ class SittingStats extends ChangeNotifier {
   }
 
   Future<void> _save() async {
+    if (_userKey == guestKey) return; // 게스트 기록은 저장하지 않는다
     try {
       _prune();
       final prefs = await SharedPreferences.getInstance();

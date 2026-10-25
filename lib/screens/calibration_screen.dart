@@ -22,7 +22,12 @@ class CalibrationScreen extends StatefulWidget {
     this.duration = const Duration(seconds: 10),
     this.onDone,
     this.onBack,
+    this.onSkip,
   });
+
+  /// '측정 없이 시작하기'. 센서 없이 스트레칭(ML Kit) 등 다른 기능만 쓸 때.
+  /// 없으면 버튼을 그리지 않는다.
+  final VoidCallback? onSkip;
 
   /// 안내 화면의 뒤로가기. 앱 진입 흐름(AppFlow)에서는 이전 단계로 돌아간다.
   /// 없으면 Navigator 로 닫는다(다른 화면에서 push 로 연 경우).
@@ -50,6 +55,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   /// 등받이(PoseLab-Back) 프레임 — 측정 화면 표시용. 기준값 계산에는 아직 안 쓴다.
   StreamSubscription<List<int>>? _backSub;
   List<double> _backLevels = const [];
+
+  /// 등받이 채널별 합·프레임 수 — 64ch 기준값(좌석 32 + 등받이 32)을 만들 때 쓴다.
+  List<double> _backSum = List<double>.filled(SensorLayout.nBackChannels, 0);
+  int _backFrames = 0;
   Timer? _ticker;
   Stopwatch? _watch;
 
@@ -93,6 +102,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _sum = List<double>.filled(SensorLayout.nChannels, 0);
     _levels = List<double>.filled(SensorLayout.nChannels, 0);
     _backLevels = List<double>.filled(SensorLayout.nBackChannels, 0);
+    _backSum = List<double>.filled(SensorLayout.nBackChannels, 0);
+    _backFrames = 0;
     _frames = 0;
     _unstable = 0;
     _baseTotal = null;
@@ -126,7 +137,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     final levels = List<double>.filled(SensorLayout.nBackChannels, 0);
     for (var i = 0; i < levels.length && i < ch.length; i++) {
       levels[i] = (ch[i] / maxV).clamp(0.0, 1.0);
+      _backSum[i] += ch[i];
     }
+    _backFrames++;
     if (mounted) setState(() => _backLevels = levels);
   }
 
@@ -188,6 +201,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           List.unmodifiable([for (final s in _sum) s / _frames]),
       frames: _frames,
       elapsed: widget.duration,
+      backMean: _backFrames == 0
+          ? null
+          : List.unmodifiable([for (final s in _backSum) s / _backFrames]),
     );
     setState(() {
       _result = r;
@@ -256,6 +272,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             seconds: widget.duration.inSeconds,
             onStart: _start,
             onClose: widget.onBack ?? () => Navigator.of(context).maybePop(),
+            onSkip: widget.onSkip,
           ),
         _Step.measuring => _MeasuringView(
             remaining: _remaining,
@@ -275,6 +292,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               Navigator.of(context).maybePop();
             },
             onRetry: _start,
+            onBack: () => setState(() => _step = _Step.intro),
           ),
       },
     );
@@ -288,7 +306,18 @@ class CalibrationResult {
     required this.channelMean,
     required this.frames,
     required this.elapsed,
+    this.backMean,
   });
+
+  /// 등받이 채널별 평균 (등받이 보드 ch0~31). 등받이가 안 들어왔으면 null.
+  final List<double>? backMean;
+
+  /// 판정 모델 기준값 — 좌석 32 + 등받이 32. 등받이가 없으면 null.
+  List<double>? get baseline64 {
+    final b = backMean;
+    if (b == null || channelMean.length != 32 || b.length != 32) return null;
+    return [...channelMean, ...b];
+  }
 
   /// 채널별 최대 압력. 서버 보정값(factor = FULL_SCALE / max)에 쓴다.
   final List<int> channelMax;
@@ -308,11 +337,13 @@ class _IntroView extends StatelessWidget {
     required this.seconds,
     required this.onStart,
     required this.onClose,
+    this.onSkip,
   });
 
   final int seconds;
   final VoidCallback onStart;
   final VoidCallback onClose;
+  final VoidCallback? onSkip;
 
   static const _checks = [
     '등을 등받이에 완전히 붙이세요',
@@ -408,7 +439,21 @@ class _IntroView extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(
                 AppSpacing.screen, 24, AppSpacing.screen, 12),
-            child: BmPrimaryButton(label: '측정 시작하기', onPressed: onStart),
+            child: Column(
+              children: [
+                BmPrimaryButton(label: '측정 시작하기', onPressed: onStart),
+                if (onSkip != null)
+                  TextButton(
+                    onPressed: onSkip,
+                    child: const Text('측정 없이 시작하기',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textTertiary,
+                        )),
+                  ),
+              ],
+            ),
           ),
         ],
       ),
@@ -575,19 +620,20 @@ class _MeasuringView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
                 AppSpacing.screen, 12, AppSpacing.screen, 12),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('자세 측정 중',
+                BmBackButton(onTap: onCancel),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('자세 측정 중',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary,
-                    )),
-                BmPill(label: 'STEP 2 / 3'),
+                    ))),
+                const BmPill(label: 'STEP 2 / 3'),
               ],
             ),
           ),
@@ -696,11 +742,15 @@ class _DoneView extends StatelessWidget {
     required this.result,
     required this.onConfirm,
     required this.onRetry,
+    required this.onBack,
   });
 
   final CalibrationResult result;
   final VoidCallback onConfirm;
   final VoidCallback onRetry;
+
+  /// 뒤로가기 = 측정 안내 화면으로.
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -711,19 +761,20 @@ class _DoneView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
                 AppSpacing.screen, 12, AppSpacing.screen, 24),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('자세 측정 완료',
+                BmBackButton(onTap: onBack),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('자세 측정 완료',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary,
-                    )),
-                BmPill(label: 'STEP 3 / 3'),
+                    ))),
+                const BmPill(label: 'STEP 3 / 3'),
               ],
             ),
           ),

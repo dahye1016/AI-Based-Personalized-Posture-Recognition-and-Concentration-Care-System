@@ -10,13 +10,12 @@ import 'screens/splash_screen.dart';
 import 'screens/stretch_screen.dart';
 import 'services/api_service.dart';
 import 'services/ble_service.dart';
-import 'services/sitting_stats.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 리포트용 착석 기록을 기기에서 불러온다 (실패해도 앱은 뜬다).
-  await SittingStats.instance.load();
+  // 리포트는 앱을 켤 때마다 빈 상태로 시작한다. 로그인하면 그 사람의 저장된
+  // 기록을 불러온다 (ProfileStore.save → SittingStats.switchUser).
   runApp(const PostureCareApp());
 }
 
@@ -115,6 +114,8 @@ class _AppFlowState extends State<AppFlow> {
           ble: _ble!,
           onDone: (_) => _go(_Phase.main),
           onBack: _back,
+          // 센서 없이도 스트레칭(ML Kit)·리포트 등을 볼 수 있게 측정을 건너뛴다.
+          onSkip: () => _go(_Phase.main),
         ),
       _Phase.main => RootNav(ble: _ble),
     };
@@ -139,10 +140,13 @@ class _RootNavState extends State<RootNav> {
 
   late final List<Widget> _pages = [
     HomeScreen(api: _api, ble: widget.ble),
-    const ReportScreen(),
-    const ChallengeScreen(),
-    const StretchScreen(),
+    ReportScreen(onBack: _toHome),
+    ChallengeScreen(onBack: _toHome),
+    StretchScreen(onBack: _toHome),
   ];
+
+  /// 다른 탭에서 뒤로가기 = 실시간 탭으로.
+  void _toHome() => setState(() => _index = 0);
 
   @override
   void dispose() {
@@ -152,7 +156,13 @@ class _RootNavState extends State<RootNav> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    // 시스템 뒤로가기(안드로이드 버튼·제스처): 다른 탭이면 실시간 탭으로.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _index != 0) _toHome();
+      },
+      child: Scaffold(
       backgroundColor: AppColors.bg,
       body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: NavigationBar(
@@ -181,6 +191,7 @@ class _RootNavState extends State<RootNav> {
           ),
         ],
       ),
+    ),
     );
   }
 }
