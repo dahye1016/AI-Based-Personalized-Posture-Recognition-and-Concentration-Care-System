@@ -189,7 +189,10 @@ class _PoseCameraState extends State<PoseCamera> with WidgetsBindingObserver {
                     pose: _pose!,
                     imageSize: _imageSize!,
                     rotation: _rotation,
-                    mirror: _camera?.lensDirection == CameraLensDirection.front,
+                    // 전면 카메라 좌우 반전: 아이폰은 ML Kit 이 받는 영상이 이미
+                    // 미리보기와 같은 방향이라 뒤집지 않는다 (뒤집으면 좌우가 반대로 찍힘).
+                    mirror: !Platform.isIOS &&
+                        _camera?.lensDirection == CameraLensDirection.front,
                   ),
                 ),
             ],
