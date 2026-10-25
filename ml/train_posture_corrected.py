@@ -13,8 +13,8 @@ train_posture_corrected.py — 7자세 64ch 모델 (정자세 보정 포함) 학
         (norm_stats_gbt.json 과 같은 계약. 기준값 64개는 받기만 하고 쓰지 않는다)
   특징  채널별 비율(값/전체 합) 64 + log(전체 합) + 등받이 비율·등받이 왼쪽 비율·오른 무릎 비율
   분류  MLP 128-64 -> 7자세 확률
-  보정  모델이 왼쪽/오른쪽 기울기라고 해도 등받이 좌우(5~85%)와 무릎(20~90%)이 균형이면 정자세.
-        등받이에 많이 기대는 사람(아로)의 정자세를 기울기로 착각하는 문제 대응.
+  규칙  없음. 대신 '반쯤 기댄' 프레임(정자세와 기대기를 섞음, 50% 이상 = 기대기)을 학습에 넣어
+        좌우 모두 살짝만 기대도 기대기로 잡히게 함. (StraightCorrection 클래스는 참고용으로 남김)
   출력  [1, 7] 확률 (label_order 순서, argmax 사용)
 
 실행: python ml/train_posture_corrected.py   (tensorflow, pandas, numpy 필요)
@@ -92,7 +92,7 @@ def build(seed=SEED):
     h = tf.keras.layers.Dense(64, activation="relu")(h)
     p = tf.keras.layers.Dense(7, activation="softmax", name="probs")(h)
     train = tf.keras.Model(inp, p)
-    final = tf.keras.Model(inp, StraightCorrection()([x, p]))
+    final = train   # 정자세 보정 규칙 없음 (대충 기대도 기대기로 잡기 위해)
     train.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss="sparse_categorical_crossentropy", metrics=["accuracy"])
     return train, final
 
@@ -103,10 +103,33 @@ def xy(df):
     return np.vstack([X, Xf]), np.r_[y, yf]
 
 
+LEAN_MIN = 0.5      # 정자세->기대기 사이를 이만큼 이상 가면 '기대기' (대충 기대도 잡히게)
+STRAIGHT_MAX = 0.25 # 이만큼 이하면 아직 '정자세'
+
+
+def partial_lean(df, n_per=600, seed=SEED):
+    """사람마다 정자세 프레임과 기대기 프레임을 섞어 '반쯤 기댄' 프레임을 만든다.
+    섞은 비율 a >= LEAN_MIN -> 기대기 라벨, a <= STRAIGHT_MAX -> 정자세 라벨."""
+    rng = np.random.default_rng(seed); out = []
+    for q, d in df.groupby("person"):
+        st = d[d.posture == "sitting_straight"][CH].to_numpy(np.float32)
+        if len(st) == 0: continue
+        for side in ("lean_left", "lean_right"):
+            lf = d[d.posture == side][CH].to_numpy(np.float32)
+            if len(lf) == 0: continue
+            for lo, hi, lab in ((LEAN_MIN, 1.0, side), (0.0, STRAIGHT_MAX, "sitting_straight")):
+                a = rng.uniform(lo, hi, (n_per, 1)).astype(np.float32)
+                X = (1 - a) * st[rng.integers(len(st), size=n_per)] + a * lf[rng.integers(len(lf), size=n_per)]
+                X = np.rint(X); X[X < 20] = 0
+                f = pd.DataFrame(X, columns=CH); f["person"] = q; f["posture"] = lab; out.append(f)
+    return pd.concat(out, ignore_index=True)
+
+
 def to128(X): return np.hstack([X, np.zeros_like(X)]).astype(np.float32)
 
 
 def fit(train_df, epochs=15):
+    train_df = pd.concat([train_df, partial_lean(train_df)], ignore_index=True)
     X, y = xy(train_df)
     w = len(y) / (7 * np.bincount(y, minlength=7))          # 자세별 균형
     tr, fin = build()
@@ -154,12 +177,13 @@ def main():
         "label_order": LABELS, "class_index": {l: k for k, l in enumerate(LABELS)}, "num_classes": 7,
         "model_io": {"tflite_file": OUT_TFLITE.name, "input_shape": [1, 128], "input_dtype": "float32",
                      "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63]. 정규화하지 말 것. 기준값은 쓰지 않으므로 0 이어도 됨",
-                     "output_shape": [1, 7], "output": "7자세 확률 (argmax 가 label_order 인덱스). 정자세 보정 포함",
+                     "output_shape": [1, 7], "output": "7자세 확률 (argmax 가 label_order 인덱스). 규칙 없음",
                      "keras_vs_tflite_agreement": agree},
         "raw_input": True,
         "channel_layout": "ch0~31 좌석, ch32~63 등받이",
         "model": {"type": "특징(채널 비율 64 + log 합 + 등받이 비율·등받이 왼쪽 비율·오른 무릎 비율) -> MLP 128-64 -> softmax",
-                  "correction": "argmax 가 lean_left/lean_right 인데 등받이 합>=100, 등받이 왼쪽 비율 5~85%, 무릎 합>=100, 오른 무릎 비율 20~90% 이면 sitting_straight",
+                  "correction": "없음",
+                  "partial_lean": f"정자세·기대기 섞은 프레임 추가: 섞은 비율 >= {LEAN_MIN} 이면 기대기, <= {STRAIGHT_MAX} 이면 정자세 (사람·자세마다 600개)",
                   "train_data": {"real": REAL.name + f" ({len(real)}프레임, 27녹화)", "dummy": DUMMY.name + f" (1/{DUMMY_EVERY} 샘플)", "flip": "좌우 반전 + 라벨 스왑으로 2배"}},
         "trained_on_persons": sorted(real.person.unique().tolist()),
         "person_split_eval": lopo,

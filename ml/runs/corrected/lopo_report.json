@@ -3,29 +3,29 @@
   "persons": [
     {
       "person": "aro1022",
-      "acc_before_correction": 95.8,
-      "acc_after_correction": 95.7,
+      "acc_before_correction": 97.2,
+      "acc_after_correction": 97.2,
       "per_posture_after": {
-        "not_sitting": 100.0,
-        "sitting_straight": 90.6,
-        "lean_forward": 92.3,
-        "cross_leg_right": 93.9,
+        "not_sitting": 99.9,
+        "sitting_straight": 100.0,
+        "lean_forward": 92.9,
+        "cross_leg_right": 93.8,
         "cross_leg_left": 100.0,
-        "lean_right": 95.0,
+        "lean_right": 95.7,
         "lean_left": 97.9
       }
     },
     {
       "person": "dahye",
-      "acc_before_correction": 99.9,
-      "acc_after_correction": 99.9,
+      "acc_before_correction": 100.0,
+      "acc_after_correction": 100.0,
       "per_posture_after": {
         "not_sitting": 100.0,
         "sitting_straight": 100.0,
         "lean_forward": 100.0,
         "cross_leg_right": 99.8,
         "cross_leg_left": 100.0,
-        "lean_right": 99.8,
+        "lean_right": 100.0,
         "lean_left": 100.0
       }
     },
@@ -44,19 +44,19 @@
     },
     {
       "person": "yewon",
-      "acc_before_correction": 98.5,
-      "acc_after_correction": 98.4,
+      "acc_before_correction": 99.0,
+      "acc_after_correction": 99.0,
       "per_posture_after": {
         "not_sitting": 100.0,
-        "sitting_straight": 99.0,
+        "sitting_straight": 100.0,
         "lean_forward": 99.0,
-        "cross_leg_right": 98.6,
-        "cross_leg_left": 97.3,
-        "lean_right": 98.9,
-        "lean_left": 95.8
+        "cross_leg_right": 97.9,
+        "cross_leg_left": 99.0,
+        "lean_right": 99.6,
+        "lean_left": 97.6
       }
     }
   ],
-  "mean_before": 98.5,
-  "mean_after": 98.5
+  "mean_before": 99.0,
+  "mean_after": 99.0
 }
