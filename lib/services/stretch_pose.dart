@@ -21,6 +21,22 @@ class PoseView {
   /// 몸통 비틀기 판정용 기준 어깨너비 (이 동작 중 가장 넓었던 값). [RepCounter] 가 채운다.
   double? twistBase;
 
+  /// 목 뒤로 젖히기 판정용 기준값 — 이 동작 중 가장 컸던 (코−눈 높이차 / 눈 사이 거리).
+  /// 정면을 볼 때 가장 크고, 턱을 들수록 작아진다. [RepCounter] 가 채운다.
+  double? noseDropBase;
+
+  PoseLandmark? get lEye => _lm(PoseLandmarkType.leftEye);
+  PoseLandmark? get rEye => _lm(PoseLandmarkType.rightEye);
+
+  /// (코 높이 − 두 눈 높이) / 눈 사이 거리. 정면이면 양수, 턱을 들면 줄어든다.
+  double? get noseDrop {
+    final n = nose, a = lEye, b = rEye;
+    if (n == null || a == null || b == null) return null;
+    final eyeDist = (a.x - b.x).abs();
+    if (eyeDist < 1) return null;
+    return (n.y - (a.y + b.y) / 2) / eyeDist;
+  }
+
   PoseLandmark? _lm(PoseLandmarkType t) {
     final l = pose.landmarks[t];
     if (l == null || l.likelihood < minLikelihood) return null;
@@ -76,7 +92,7 @@ class StretchPoses {
 
   static MoveRule? ruleFor(String move) => switch (move) {
         '목 옆으로 늘이기' => const MoveRule(_neckSide, 8, '°'),
-        '목 뒤로 젖히기' => const MoveRule(_neckBack, -0.03, ''),
+        '목 뒤로 젖히기' => const MoveRule(_neckBack, 0.3, ''),
         '팔 양 옆으로 늘리기' => const MoveRule(_armsSide, 0.1, ''),
         '팔 위로 뻗기' => const MoveRule(_armsUp, 0.0, ''),
         '몸통 옆으로 늘이기' => const MoveRule(_torsoSide, 5, '°'),
@@ -92,11 +108,12 @@ class StretchPoses {
     return PoseView.tiltDeg(a, b);
   }
 
-  /// (귀 높이 − 코 높이) / 어깨너비. 턱을 들면 코가 귀보다 올라가 커진다.
+  /// 1 − (지금 코−눈 높이차 / 정면일 때 코−눈 높이차).
+  /// 턱을 들면 화면에서 코가 눈 쪽으로 올라붙어 커진다. 귀 대신 잘 잡히는 눈·코만 쓴다.
   static double? _neckBack(PoseView p) {
-    final n = p.nose, a = p.lEar, b = p.rEar, w = p.shoulderWidth;
-    if (n == null || a == null || b == null || w == null) return null;
-    return ((a.y + b.y) / 2 - n.y) / w;
+    final d = p.noseDrop, base = p.noseDropBase;
+    if (d == null || base == null || base <= 0) return null;
+    return 1 - d / base;
   }
 
   /// 손(없으면 팔꿈치)이 어깨 바깥으로 나간 거리 중 작은 쪽 / 어깨너비.
@@ -170,6 +187,7 @@ class RepCounter {
   bool _counted = false; // 이번 자세에서 이미 셌는지 (풀기 전까지)
   bool _holding = false;
   double _maxShoulder = 0;
+  double _maxNoseDrop = 0;
 
   /// 마지막 판정값 (관절이 안 보이면 null). 디버그 표시용.
   double? lastValue;
@@ -183,6 +201,9 @@ class RepCounter {
     final w = view.shoulderWidth;
     if (w != null && w > _maxShoulder) _maxShoulder = w;
     view.twistBase = _maxShoulder;
+    final nd = view.noseDrop;
+    if (nd != null && nd > _maxNoseDrop) _maxNoseDrop = nd;
+    view.noseDropBase = _maxNoseDrop;
 
     final v = rule.value(view);
     lastValue = v;
