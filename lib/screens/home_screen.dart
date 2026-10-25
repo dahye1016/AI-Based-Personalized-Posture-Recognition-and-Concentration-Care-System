@@ -21,8 +21,11 @@ import 'settings_screen.dart';
 import 'stretch_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.api});
+  const HomeScreen({super.key, required this.api, this.ble});
   final ApiService api;
+
+  /// 앱 전체가 공유하는 센서 연결. null 이면 이 화면이 직접 만들고 닫을 때 끊는다.
+  final BleService? ble;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -30,8 +33,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
 
-  final BleService _ble = BleService();
-  bool _bleConnected = false;
+  late final BleService _ble = widget.ble ?? BleService();
+
+  /// 이 화면이 직접 만든 연결인지. 공유 연결이면 화면을 닫아도 끊지 않는다.
+  bool get _ownsBle => widget.ble == null;
   bool _bleConnecting = false;
 
   // ── 실시간 히트맵 (BLE 전용, 서버 무관) ──────────────────────────
@@ -92,6 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _backSub = _ble.backFrames.listen(_onBackFrame);
     _merger = FrameMerger(_ble.frames, _ble.backFrames);
     _mergedSub = _merger.frames.listen(_onMergedFrame);
+    _ble.statusListenable.addListener(_onBleStatus);
     _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final now = DateTime.now();
       _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
@@ -104,18 +110,19 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     });
+    // 화면에 들어오면 좌석·등받이 센서를 이름(PoseLab-Seat/Back)으로 바로 찾는다.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _connectSensors());
+  }
+
+  void _onBleStatus() {
+    if (mounted) setState(() {});
   }
 
   /// 등받이 프레임은 화면 표시용으로만 보관한다. 판정([_onMergedFrame])과 무관.
   void _onBackFrame(SensorFrame f) {
-    final now = f.receivedAt;
-    _backRecvTimes.add(now);
-    _backRecvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
+    _backRecvTimes.add(f.receivedAt);
     if (!mounted) return;
-    setState(() {
-      _lastBackFrame = f;
-      _backFps = _backRecvTimes.length.toDouble();
-    });
+    setState(() => _lastBackFrame = f);
   }
 
   /// TFLite 모델과 정규화 값을 읽는다.
@@ -221,39 +228,52 @@ class _HomeScreenState extends State<HomeScreen> {
     _backSub?.cancel();
     _mergedSub?.cancel();
     _merger.dispose();
+    _ble.statusListenable.removeListener(_onBleStatus);
     _fpsTimer?.cancel();
     _model?.dispose();
-    _ble.disconnect();
+    if (_ownsBle) _ble.disconnect();
     super.dispose();
   }
 
+  /// 센서가 하나라도 연결(또는 탐색) 중이면 끊고, 아니면 다시 찾는다.
   Future<void> _toggleBle() async {
-    print('버튼 눌림!');
-    if (_bleConnected) {
+    final active = _ble.statusOf(BleBoard.seat) != BoardLinkStatus.off ||
+        _ble.statusOf(BleBoard.back) != BoardLinkStatus.off;
+    if (active && !_bleConnecting) {
       await _ble.disconnect();
       // 다시 붙었을 때 끊기기 직전 판정이 다수결에 남지 않게 한다.
       _model?.reset();
       _resetBad(); // 끊긴 동안의 자세는 모르므로 다시 붙으면 처음부터 잰다.
       setState(() {
-        _bleConnected = false;
         _posture = null;
+        _lastFrame = null;
+        _lastBackFrame = null;
       });
     } else {
-      setState(() => _bleConnecting = true);
-      final ok = await _ble.connect();
-      setState(() {
-        _bleConnected = ok;
-        _bleConnecting = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(ok ? '✅ ESP32 연결됨!' : '❌ 연결 실패. 다시 시도해주세요.'),
-            backgroundColor: ok ? Colors.green : Colors.red,
-          ),
-        );
-      }
+      await _connectSensors(showResult: true);
     }
+  }
+
+  /// 좌석·등받이를 함께 찾는다. 좌석 결과가 나오면 돌아오고,
+  /// 등받이는 못 찾았으면 BleService 가 뒤에서 계속 재시도한다.
+  Future<void> _connectSensors({bool showResult = false}) async {
+    if (_bleConnecting) return;
+    setState(() => _bleConnecting = true);
+    final ok = await _ble.connect();
+    if (!mounted) return;
+    setState(() {
+      _bleConnecting = false;
+    });
+    if (!showResult) return;
+    final back = _ble.isBackConnected;
+    final msg = ok && back
+        ? '좌석·등받이 센서가 연결됐어요'
+        : ok
+            ? '좌석 센서가 연결됐어요. 등받이 센서는 계속 찾고 있어요'
+            : '좌석 센서(PoseLab-Seat)를 찾지 못했어요. 전원을 확인해 주세요';
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ── 표시용 계산 ────────────────────────────────────────────
@@ -315,43 +335,63 @@ class _HomeScreenState extends State<HomeScreen> {
     return null;
   }
 
-  /// 헤더의 BLE pill. 탭하면 연결/해제. 스캔 중에는 스피너.
-  /// 수신 중이면 LIVE, 연결됐지만 데이터가 없으면 경고색, 끊김이면 회색.
-  Widget get _blePill {
-    if (_bleConnecting) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 10),
-        child: SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-    final BmPill pill;
-    if (_fps > 0) {
-      pill = const BmPill(label: 'LIVE', dot: true);
-    } else if (_bleConnected) {
-      pill = const BmPill(
-        label: '데이터 없음',
-        color: AppColors.warnIcon,
-        bg: AppColors.warnBg,
-        dot: true,
-      );
+  /// 센서 한 대의 상태 칩. 이름 기준으로 연결된 보드([BleBoard])별로 따로 그린다.
+  Widget _sensorChip(String label, BleBoard board, double fps) {
+    final st = _ble.statusOf(board);
+    final String text;
+    final Color color;
+    final Color bg;
+    if (st == BoardLinkStatus.connected && fps > 0) {
+      text = '$label LIVE';
+      color = AppColors.primary;
+      bg = AppColors.primarySoft;
+    } else if (st == BoardLinkStatus.connected) {
+      text = '$label 데이터 없음';
+      color = AppColors.warnIcon;
+      bg = AppColors.warnBg;
+    } else if (st == BoardLinkStatus.searching) {
+      text = '$label 찾는 중';
+      color = AppColors.textSecondary;
+      bg = AppColors.surface;
     } else {
-      pill = const BmPill(
-        label: '센서 연결',
-        color: AppColors.textTertiary,
-        bg: AppColors.surface,
-      );
+      text = '$label 꺼짐';
+      color = AppColors.textTertiary;
+      bg = AppColors.surface;
     }
-    return Tooltip(
-      message: _bleConnected ? 'BLE 연결됨 (탭해서 해제)' : 'ESP32 연결',
-      child: GestureDetector(
-        onTap: _toggleBle,
-        behavior: HitTestBehavior.opaque,
-        child: pill,
-      ),
+    return BmPill(label: text, color: color, bg: bg, dot: true);
+  }
+
+  /// 헤더 아래 센서 상태 줄 — 좌석 / 등받이 + 연결·해제 버튼.
+  Widget get _sensorRow {
+    final active = _ble.statusOf(BleBoard.seat) != BoardLinkStatus.off ||
+        _ble.statusOf(BleBoard.back) != BoardLinkStatus.off;
+    return Row(
+      children: [
+        _sensorChip('좌석', BleBoard.seat, _fps),
+        const SizedBox(width: 6),
+        _sensorChip('등받이', BleBoard.back, _backFps),
+        const Spacer(),
+        if (_bleConnecting)
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        else
+          GestureDetector(
+            onTap: _toggleBle,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Text(active ? '연결 해제' : '센서 연결',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textSecondary,
+                  )),
+            ),
+          ),
+      ],
     );
   }
 
@@ -370,7 +410,6 @@ class _HomeScreenState extends State<HomeScreen> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _blePill,
                   IconButton(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(
@@ -403,6 +442,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
+            ),
+
+            // ── 센서 상태 (좌석 / 등받이) ──────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screen, 0, AppSpacing.screen, 12),
+              child: _sensorRow,
             ),
 
             // ── 상태 배너 ─────────────────────────
@@ -462,6 +508,20 @@ class _HomeScreenState extends State<HomeScreen> {
                       trailing: _pressureSummary,
                     ),
                     const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                          _lastBackFrame == null
+                              ? '등받이 · 위 어깨 → 아래 허리 (센서 대기)'
+                              : '등받이 · 위 어깨 → 아래 허리',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textTertiary,
+                          )),
+                    ),
+                    const SizedBox(height: 8),
+                    _HeatGrid(grid: _backHeatGrid),
+                    const SizedBox(height: 14),
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text('좌석 · 위 엉덩이 → 아래 무릎',
@@ -500,8 +560,8 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Expanded(
           child: Text(
-            'frameNo ${_lastFrame?.frameNo ?? '—'} · fps ${_fps.toStringAsFixed(0)}'
-            ' · 등받이 frameNo ${_lastBackFrame?.frameNo ?? '—'} · fps ${_backFps.toStringAsFixed(0)}',
+            '좌석 #${_lastFrame?.frameNo ?? '—'} · ${_fps.toStringAsFixed(0)}fps   '
+            '등받이 #${_lastBackFrame?.frameNo ?? '—'} · ${_backFps.toStringAsFixed(0)}fps',
             style: const TextStyle(
               fontSize: 11,
               color: AppColors.textTertiary,
@@ -608,7 +668,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 등받이 32채널을 [SensorLayout.backDisplayRows] 순서(어깨 → 중간 → 허리,
   /// 각 줄 Right → Left)로 0~1 정규화한 값. 등받이 자체 최댓값 기준.
   /// 등받이 보드 프레임은 ch0~31 이므로 64ch 번호에서 backFirstCh 를 빼서 읽는다.
-  // ignore: unused_element  (작업 4단계 — 등받이 히트맵 UI 에서 사용 예정)
   List<List<double>> get _backHeatGrid {
     const rows = SensorLayout.backDisplayRows;
     final grid = [for (final row in rows) List<double>.filled(row.length, 0)];

@@ -1,11 +1,24 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, debugPrint, Listenable, ValueNotifier;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/sensor_frame.dart';
 import '../models/sensor_layout.dart';
+
+/// 보드 한 대의 연결 상태 (화면 표시용).
+enum BoardLinkStatus {
+  /// 연결도 탐색도 하지 않음 (사용자가 끊었거나 아직 시작 전).
+  off,
+
+  /// 스캔·연결 시도·재연결 대기 중.
+  searching,
+
+  /// GATT 연결됨.
+  connected,
+}
 
 /// PoseLab 보드의 역할. 같은 펌웨어를 두 보드에 올리고 부팅 시 DIP SW1 로 정한다.
 /// 광고 이름은 펌웨어 `BLE_NAME_SEAT` / `BLE_NAME_BACK` 과 철자가 같아야 한다.
@@ -94,6 +107,25 @@ class BleService {
   /// 등받이 연결 상태.
   bool get isBackConnected => _back.isConnected;
 
+  /// 보드 연결 상태가 바뀔 때마다 알린다. 화면은 이걸 듣고 [statusOf] 를 다시 읽는다.
+  Listenable get statusListenable => _statusTick;
+  final ValueNotifier<int> _statusTick = ValueNotifier<int>(0);
+  void _notifyStatus() => _statusTick.value++;
+
+  /// 보드별 연결 상태. 이름(`PoseLab-Seat` / `PoseLab-Back`)으로 구분된 보드 기준.
+  BoardLinkStatus statusOf(BleBoard b) {
+    final l = _links[b]!;
+    if (l.isConnected) return BoardLinkStatus.connected;
+    if (_manualDisconnect) return BoardLinkStatus.off;
+    if (_wanted.contains(b) ||
+        l.connecting ||
+        l.pending != null ||
+        (l.reconnectTimer?.isActive ?? false)) {
+      return BoardLinkStatus.searching;
+    }
+    return BoardLinkStatus.off;
+  }
+
   // ── 공개 API ─────────────────────────────────────────────────────
   /// 좌석·등받이를 한 스캔 창에서 함께 찾아 연결한다.
   ///
@@ -158,6 +190,7 @@ class BleService {
     for (final l in _links.values) {
       await l.disconnect();
     }
+    _notifyStatus();
   }
 
   /// 스트림까지 완전히 정리 (앱 종료/서비스 폐기 시).
@@ -184,6 +217,7 @@ class BleService {
       if (!link.connecting) _wanted.add(b);
     }
     if (_wanted.isNotEmpty && _scanSub == null) _startScanSession();
+    _notifyStatus();
     return out;
   }
 
@@ -252,12 +286,14 @@ class BleService {
       _completePending(_links[b]!, false);
     }
     FlutterBluePlus.stopScan().catchError((Object _) {});
+    _notifyStatus();
   }
 
   void _completePending(_BoardLink link, bool ok) {
     final p = link.pending;
     link.pending = null;
     if (p != null && !p.isCompleted) p.complete(ok);
+    _notifyStatus();
   }
 
   // ── 연결 (보드별) ────────────────────────────────────────────────
@@ -277,6 +313,7 @@ class BleService {
 
       link.isConnected = true;
       link.reconnectDelayMs = _baseReconnectMs; // 연결 성공 → backoff 리셋
+      _notifyStatus();
 
       await _negotiateMtu(link, device);
       _listenConnectionState(link, device); // 자동 재연결 감시
@@ -286,6 +323,7 @@ class BleService {
     } catch (e) {
       debugPrint('$tag 연결 실패: $e');
       link.isConnected = false;
+      _notifyStatus();
       return false;
     }
   }
@@ -374,6 +412,7 @@ class BleService {
       if (state == BluetoothConnectionState.disconnected) {
         link.isConnected = false;
         link.dataSub?.cancel();
+        _notifyStatus();
         if (!_manualDisconnect) {
           debugPrint('[BLE ${link.board.name}] 연결 끊김 — 재연결 예약 (다른 보드는 유지)');
           _scheduleReconnect(link);
@@ -388,6 +427,7 @@ class BleService {
     debugPrint('$tag ${link.reconnectDelayMs ~/ 1000}s 후 재연결 시도');
     link.reconnectTimer =
         Timer(Duration(milliseconds: link.reconnectDelayMs), () async {
+      _notifyStatus();
       if (_manualDisconnect) return;
       final ok = await _scanFor({link.board})[link.board]!;
       if (!ok && !_manualDisconnect) {
@@ -397,6 +437,7 @@ class BleService {
         _scheduleReconnect(link);
       }
     });
+    _notifyStatus();
   }
 
   // ── UUID 매칭 (16bit 단축형 / 128bit 확장형 양쪽 허용) ────────────
