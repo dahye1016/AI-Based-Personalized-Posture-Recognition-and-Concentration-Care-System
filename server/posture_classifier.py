@@ -15,7 +15,7 @@
    → 64채널에서 6개 대표값을 뽑는 집계(영역 평균 등) 정의가 필요하다.
 
 2. 출력 클래스 매핑 (4종 문자열 → 7종 정수 0~6)
-   이 로직의 출력은 "바른자세/거북목/기대기/다리꼬기" 4종 한글 문자열이다.
+   이 로직의 출력은 "바른자세/앞으로 숙이기/기대기/다리꼬기" 4종 한글 문자열이다.
    신규 표준은 정수 0~6 (constants.POSTURE_LABELS) 7종이다.
    → 문자열 → 정수 라벨 변환 매핑이 필요하다.
 
@@ -50,9 +50,9 @@ def classify_posture(s1, s2, s3, s4, s5, s6):
     if abs(left_avg - right_avg) > 200:
         return "다리꼬기"
 
-    # 2. 거북목 — 앞쪽 압력이 뒤쪽보다 훨씬 높을 때
+    # 2. 앞으로 숙이기 — 앞쪽 압력이 뒤쪽보다 훨씬 높을 때
     if front_avg > 500 and front_avg - back_avg > 250:
-        return "거북목"
+        return "앞으로 숙이기"
 
     # 3. 기대기 — 뒤쪽 압력이 앞쪽보다 훨씬 높을 때
     if back_avg > 500 and back_avg - front_avg > 250:
@@ -72,9 +72,9 @@ def get_posture_feedback(posture):
             "message": "좋아요! 바른 자세를 유지하고 있어요 😊",
             "action": None
         },
-        "거북목": {
+        "앞으로 숙이기": {
             "status": "warning",
-            "message": "거북목 자세가 감지됐어요! 허리를 펴주세요 🐢",
+            "message": "상체가 앞으로 숙여졌어요! 허리를 펴고 등을 붙여주세요",
             "action": "진동 알림"
         },
         "기대기": {

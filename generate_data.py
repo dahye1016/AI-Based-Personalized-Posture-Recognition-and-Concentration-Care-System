@@ -26,7 +26,7 @@ for i in range(num_samples_per_posture):
         "p1_정자세"
     ])
 
-    # --- [p2: 앞으로 숙이기 / 거북목] 체중이 앞으로 쏠려 등받이는 0에 가깝고 앞쪽 대폭 상승 ---
+    # --- [p2: 앞으로 숙이기] 체중이 앞으로 쏠려 등받이는 0에 가깝고 앞쪽 대폭 상승 ---
     data_list.append([
         np.random.normal(850, 40), np.random.normal(850, 40),
         np.random.normal(400, 50), np.random.normal(400, 50),

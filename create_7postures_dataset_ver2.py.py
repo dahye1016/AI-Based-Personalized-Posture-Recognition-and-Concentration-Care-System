@@ -10,7 +10,7 @@ for i in range(num_samples_per_posture):
     data_list.append([np.random.normal(5, 3), np.random.normal(5, 3), np.random.normal(5, 3), np.random.normal(5, 3), np.random.normal(2, 1), np.random.normal(2, 1), "p0_앉지않음"])
     # p1: 정자세
     data_list.append([np.random.normal(700, 50), np.random.normal(700, 50), np.random.normal(650, 50), np.random.normal(650, 50), np.random.normal(500, 40), np.random.normal(500, 40), "p1_정자세"])
-    # p2: 앞으로 숙이기 (거북목)
+    # p2: 앞으로 숙이기
     data_list.append([np.random.normal(850, 40), np.random.normal(850, 40), np.random.normal(400, 50), np.random.normal(400, 50), np.random.normal(15, 5), np.random.normal(15, 5), "p2_앞으로숙이기"])
     # p3: 오른다리 꼬기
     data_list.append([np.random.normal(350, 50), np.random.normal(900, 40), np.random.normal(300, 50), np.random.normal(850, 40), np.random.normal(450, 40), np.random.normal(450, 40), "p3_오른다리꼬기"])

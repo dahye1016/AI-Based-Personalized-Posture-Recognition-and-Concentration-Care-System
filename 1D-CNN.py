@@ -70,7 +70,7 @@ def classify_posture_rule(s1, s2, s3, s4, s5, s6):
     if abs(left_avg - right_avg) > 200:
         return "다리꼬기"
     if front_avg > 500 and front_avg - back_avg > 250:
-        return "거북목"
+        return "앞으로 숙이기"
     if back_avg > 500 and back_avg - front_avg > 250:
         return "기대기"
     return "바른자세"
@@ -78,7 +78,7 @@ def classify_posture_rule(s1, s2, s3, s4, s5, s6):
 def get_posture_feedback(posture):
     feedback_map = {
         "바른자세": "아주 좋습니다! 현재 자세를 유지하세요.",
-        "거북목": "목이 앞으로 나와있습니다. 어깨를 펴고 턱을 당기세요.",
+        "앞으로 숙이기": "상체가 앞으로 쏠렸습니다. 허리를 펴고 등을 등받이에 붙이세요.",
         "기대기": "허리에 무리가 갈 수 있으니 등받이에 엉덩이를 바짝 붙여주세요.",
         "다리꼬기": "골반 불균형을 유발합니다. 다리를 풀어주세요."
     }

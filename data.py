@@ -11,7 +11,7 @@ POSTURE_PATTERNS = {
         "sensor_3": (350, 390), "sensor_4": (350, 390),
         "sensor_5": (300, 350), "sensor_6": (300, 350),
     },
-    "거북목": {
+    "앞으로 숙이기": {
         "sensor_1": (600, 700), "sensor_2": (600, 700),
         "sensor_3": (400, 500), "sensor_4": (400, 500),
         "sensor_5": (100, 200), "sensor_6": (100, 200),
@@ -65,7 +65,7 @@ def run_simulator():
     print("  통합형 하드웨어 가상 센서 시뮬레이터 시작!")
     print("=" * 50)
     print("자세를 선택하세요:")
-    print("  1. 바른자세\n  2. 거북목\n  3. 기대기\n  4. 다리꼬기\n  5. 자동 변환 모드\n  q. 종료")
+    print("  1. 바른자세\n  2. 앞으로 숙이기\n  3. 기대기\n  4. 다리꼬기\n  5. 자동 변환 모드\n  q. 종료")
     print("=" * 50)
 
     postures = list(POSTURE_PATTERNS.keys())

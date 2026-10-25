@@ -50,7 +50,7 @@ class AppColors {
 
   // 자세 분류별 색 (분포/차트 공통) — 피그마 리포트 도넛과 동일
   static const postureGood = Color(0xFF2AC1BC); // 정자세 = 민트
-  static const postureLean = Color(0xFFFF6B35); // 앞으로 숙이기(거북목) = 주황
+  static const postureLean = Color(0xFFFF6B35); // 앞으로 숙이기 = 주황
   static const postureCross = Color(0xFF7A51BD); // 다리 꼬기 = 보라
   static const postureTilt = Color(0xFFE4538D); // 좌우 기울기 = 핑크
 
