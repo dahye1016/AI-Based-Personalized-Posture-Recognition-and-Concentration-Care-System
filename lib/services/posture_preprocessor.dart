@@ -1,8 +1,8 @@
 /// 모델 입력 전처리 + 결과 안정화. Flutter/TFLite 에 의존하지 않는 순수 Dart.
 ///
-/// 학습(ml/train_posture_cnn.py)과 똑같이 만들어야 한다.
-///   1. ch0~31 을 (값 - mean) / std 로 정규화  (mean/std 는 norm_stats.json)
-///   2. 뒤에 0 을 32개 붙여 64개로 만든다 (등받이 센서 자리, 아직 없음)
+/// 학습(feat/dahye ml/train_posture_gbt.py)과 똑같이 만들어야 한다.
+///   입력 128개 = [지금 프레임 원시값 ch0~63] + [기준값(정자세 5초 평균) ch0~63]
+///   정규화하지 않는다 (특징 계산은 모델 안에서 한다). 0 패딩 없음.
 library;
 
 import 'dart:typed_data';
@@ -20,24 +20,15 @@ const List<String> kExpectedLabelOrder = [
 ];
 
 class PosturePreprocessor {
-  PosturePreprocessor({
-    required this.mean,
-    required this.std,
-    this.inputLength = 64,
-  }) {
-    if (mean.length != std.length) {
-      throw ArgumentError('mean/std 길이가 다릅니다: ${mean.length} vs ${std.length}');
-    }
-    if (mean.length > inputLength) {
-      throw ArgumentError('채널 수(${mean.length})가 입력 길이($inputLength)보다 큽니다.');
-    }
-  }
+  PosturePreprocessor({this.channelCount = 64});
 
-  /// `norm_stats.json` (assets/model) 을 파싱한 Map 으로 만든다.
+  /// `norm_stats_gbt.json` (assets/model) 을 파싱한 Map 으로 만든다.
+  /// 원시값 입력 모델(`raw_input: true`)만 받는다. mean/std 는 쓰지 않는다.
   factory PosturePreprocessor.fromJson(Map<String, dynamic> json) {
     final labels = (json['label_order'] as List).cast<String>();
     if (labels.length != kExpectedLabelOrder.length) {
-      throw StateError('라벨 개수가 ${labels.length}개입니다 (7개여야 함).');
+      throw StateError(
+          '라벨 개수가 ${labels.length}개입니다 (${kExpectedLabelOrder.length}개여야 함).');
     }
     for (var i = 0; i < labels.length; i++) {
       if (labels[i] != kExpectedLabelOrder[i]) {
@@ -45,31 +36,35 @@ class PosturePreprocessor {
             '라벨 순서가 앱과 다릅니다: $i번이 ${labels[i]} (앱 기준 ${kExpectedLabelOrder[i]})');
       }
     }
+    if (json['raw_input'] != true) {
+      throw StateError('raw_input 모델이 아닙니다 (정규화 입력 모델은 지원하지 않음).');
+    }
     final shape = ((json['model_io'] as Map)['input_shape'] as List).cast<int>();
     final length = shape.fold<int>(1, (a, b) => a * b);
-    return PosturePreprocessor(
-      mean: (json['mean'] as List).map((e) => (e as num).toDouble()).toList(),
-      std: (json['std'] as List).map((e) => (e as num).toDouble()).toList(),
-      inputLength: length,
-    );
+    if (length.isOdd) {
+      throw StateError('입력 길이 $length 가 [프레임 + 기준값] 구조가 아닙니다.');
+    }
+    return PosturePreprocessor(channelCount: length ~/ 2);
   }
 
-  final List<double> mean;
-  final List<double> std;
+  /// 프레임 채널 수 (64 = 좌석 32 + 등받이 32).
+  final int channelCount;
 
-  /// 모델 입력 값 개수 (64).
-  final int inputLength;
+  /// 모델 입력 값 개수 (128 = 프레임 64 + 기준값 64).
+  int get inputLength => channelCount * 2;
 
-  int get channelCount => mean.length;
-
-  /// ch0~31 원시값 -> 모델 입력 64개. 나머지 자리는 0.
-  Float32List toInput(List<int> channels) {
+  /// 원시값 64개 + 기준값 64개 -> 모델 입력 128개. 정규화·패딩 없음.
+  Float32List toInput(List<int> channels, List<double> baseline) {
     if (channels.length != channelCount) {
       throw ArgumentError('채널이 ${channels.length}개입니다 ($channelCount개여야 함).');
     }
-    final out = Float32List(inputLength); // 0 으로 초기화 = 패딩
+    if (baseline.length != channelCount) {
+      throw ArgumentError('기준값이 ${baseline.length}개입니다 ($channelCount개여야 함).');
+    }
+    final out = Float32List(inputLength);
     for (var i = 0; i < channelCount; i++) {
-      out[i] = (channels[i] - mean[i]) / std[i];
+      out[i] = channels[i].toDouble();
+      out[channelCount + i] = baseline[i];
     }
     return out;
   }
@@ -81,6 +76,53 @@ class PosturePreprocessor {
       if (scores[i] > scores[best]) best = i;
     }
     return best;
+  }
+}
+
+/// ★ 임시 기준값 수집기 (작업 39) — 캘리브레이션 화면이 64ch 기준값을 주기 전까지 쓴다.
+///
+/// 앉아 있는 프레임(좌석 ch0~31 합 >= [seatMin])만 [frames] 개 모아 채널별 평균을 낸다.
+/// 기본 50 프레임 = 병합 프레임 10Hz 에서 5초 (학습의 캘리브레이션 5초와 같은 길이).
+/// [seatMin] 6000 은 팀 자세 정의(gen_dummy_spec.py SEAT_MIN)의 '앉아 있음' 기준.
+/// 앉지 않은 프레임은 세지 않고 건너뛴다 — 빈 의자가 기준값이 되는 것을 막는다.
+class BaselineCollector {
+  BaselineCollector({
+    this.frames = 50,
+    this.seatMin = 6000,
+    this.channelCount = 64,
+  });
+
+  final int frames;
+  final double seatMin;
+  final int channelCount;
+
+  List<double>? _sum;
+  int _count = 0;
+
+  /// 지금까지 모은 앉은 프레임 수.
+  int get count => _count;
+
+  /// 프레임 1개를 넣는다. [frames] 개가 모이면 기준값(채널별 평균)을 돌려준다.
+  List<double>? add(List<int> channels) {
+    if (channels.length != channelCount) return null;
+    var seat = 0;
+    for (var i = 0; i < channelCount ~/ 2; i++) {
+      seat += channels[i];
+    }
+    if (seat < seatMin) return null;
+
+    final sum = _sum ??= List<double>.filled(channelCount, 0);
+    for (var i = 0; i < channelCount; i++) {
+      sum[i] += channels[i];
+    }
+    _count++;
+    if (_count < frames) return null;
+    return [for (final s in sum) s / _count];
+  }
+
+  void reset() {
+    _sum = null;
+    _count = 0;
   }
 }
 

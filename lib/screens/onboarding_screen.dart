@@ -19,7 +19,7 @@ class OnboardingScreen extends StatelessWidget {
     (
       icon: Icons.notifications_active_outlined,
       title: '실시간 자세 알림',
-      desc: '거북목·다리꼬기가 20초 넘게 이어지면 진동으로 알려요.',
+      desc: '앞으로 숙이기·다리꼬기가 20초 넘게 이어지면 진동으로 알려요.',
     ),
     (
       icon: Icons.insights_outlined,

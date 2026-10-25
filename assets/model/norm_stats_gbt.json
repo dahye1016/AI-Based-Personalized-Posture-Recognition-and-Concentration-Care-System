@@ -1,0 +1,91 @@
+{
+  "label_order": [
+    "not_sitting",
+    "sitting_straight",
+    "lean_forward",
+    "cross_leg_right",
+    "cross_leg_left",
+    "lean_right",
+    "lean_left"
+  ],
+  "class_index": {
+    "not_sitting": 0,
+    "sitting_straight": 1,
+    "lean_forward": 2,
+    "cross_leg_right": 3,
+    "cross_leg_left": 4,
+    "lean_right": 5,
+    "lean_left": 6
+  },
+  "label_names": {
+    "p0": "앉지 않음",
+    "p1": "정자세",
+    "p2": "앞으로 숙이기",
+    "p3": "오른다리 꼬기",
+    "p4": "왼다리 꼬기",
+    "p5": "오른쪽 기대기",
+    "p6": "왼쪽 기대기"
+  },
+  "num_classes": 7,
+  "model_io": {
+    "tflite_file": "posture_model_gbt.tflite",
+    "input_shape": [
+      1,
+      128
+    ],
+    "input_dtype": "float32",
+    "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63]. 정규화하지 말 것",
+    "output_shape": [
+      1,
+      7
+    ],
+    "output": "7자세 확률 (argmax 가 label_order 인덱스). 규칙 없음",
+    "sklearn_vs_tflite_agreement": 1.0
+  },
+  "raw_input": true,
+  "channel_layout": "ch0~31 좌석, ch32~63 등받이 (ml/collect_data.py --port-back 저장 순서)",
+  "calibration": {
+    "seconds": 5,
+    "how": "정자세(허리·등·어깨를 등받이에 붙임)로 5초 앉는 동안 채널별 원시값 평균 64개를 저장해 두고, 매 프레임 입력 뒤쪽 64개로 같이 넣는다."
+  },
+  "model": {
+    "type": "HistGradientBoosting x2 (모양 / 캘리브레이션 차이), 확률 평균",
+    "params": {
+      "max_iter": 200,
+      "learning_rate": 0.1,
+      "class_weight": "balanced",
+      "random_state": 42
+    },
+    "diff_weight": 0.5,
+    "posture_spec": "gen_dummy_spec.py SPEC (2026-10-25)"
+  },
+  "trained_on_persons": [
+    "aro",
+    "dahye",
+    "junseo",
+    "yewon"
+  ],
+  "person_split_eval": {
+    "method": "leave-one-person-out (실측만, 캘리브레이션 5초 제외)",
+    "pooled_accuracy_spec": 0.9607182940516273,
+    "pooled_accuracy_all": 0.9132536109806955,
+    "per_class_spec": {
+      "not_sitting": 0.9989290495314592,
+      "sitting_straight": 0.7579201101928374,
+      "lean_forward": 0.9789114279975899,
+      "cross_leg_right": 0.9752689898827686,
+      "cross_leg_left": 0.9861847389558233,
+      "lean_right": 0.9686746987951808,
+      "lean_left": 0.9839314408141403
+    },
+    "per_class_all": {
+      "not_sitting": 0.9989290495314592,
+      "sitting_straight": 0.8163584266736129,
+      "lean_forward": 0.9789114279975899,
+      "cross_leg_right": 0.9752689898827686,
+      "cross_leg_left": 0.9861847389558233,
+      "lean_right": 0.7736546184738956,
+      "lean_left": 0.8638280779272947
+    }
+  }
+}

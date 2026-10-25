@@ -8,7 +8,7 @@ class PostureStyle {
 
   static const _map = {
     '바른자세': PostureStyle(Color(0xFF2E7D32), Icons.check_circle),
-    '거북목': PostureStyle(Color(0xFFE65100), Icons.warning_amber_rounded),
+    '앞으로 숙이기': PostureStyle(Color(0xFFE65100), Icons.warning_amber_rounded),
     '기대기': PostureStyle(Color(0xFFAD1457), Icons.airline_seat_recline_extra),
     '다리꼬기': PostureStyle(Color(0xFF6A1B9A), Icons.swap_horiz),
   };

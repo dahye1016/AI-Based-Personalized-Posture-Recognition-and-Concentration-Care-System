@@ -27,7 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 같은 알림을 다시 보내는 간격 (분)
   double _repeatMin = 5;
 
-  /// 알림 대상 자세. 팀 확정 7클래스의 나쁜 자세 5종에서 만든다.
+  /// 알림 대상 자세. 팀 확정 8클래스의 나쁜 자세 6종에서 만든다.
   /// (이전 '한쪽 쏠림' 항목은 판정기가 출력하지 않는 유령 항목이라 제거)
   final _postures = <PostureClass, bool>{
     for (final p in PostureClass.badClasses) p: true,
