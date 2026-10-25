@@ -6,6 +6,7 @@
     python tools/sensor_check.py                 # 포트 자동 탐색, 15초
     python tools/sensor_check.py --port /dev/cu.usbserial-0001
     python tools/sensor_check.py --port COM3 --seconds 30
+    python tools/sensor_check.py --port COM7 --baud 2000000   # PoseLab 32ch 매트
 
 이해하는 출력 형식 (레포의 펌웨어 3종 모두):
     120,0,845,33                        (fsr_serial_check / fsr_ble 의 "전송: ...")
@@ -14,6 +15,7 @@
 """
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -79,6 +81,8 @@ def main():
                     help="막대 그래프 최대값 (ESP32 원시값 4095, 서버 전송값이면 1023)")
     ap.add_argument("--csv", help="측정값을 저장할 CSV 경로 (선택)")
     args = ap.parse_args()
+    if os.name == "nt":
+        os.system("")  # 윈도우 콘솔에서 화면 덮어쓰기(ANSI) 켜기
 
     port = args.port or find_port()
     print(f"포트 {port} @ {args.baud} 연결 중...")
@@ -96,6 +100,7 @@ def main():
     start = time.time()
     shown_lines = 0
     total_bytes = 0
+    last_draw = -1.0
     print(f"{args.seconds:.0f}초 동안 측정합니다. 방석에 앉았다 일어났다 해보세요.\n")
 
     try:
@@ -111,6 +116,10 @@ def main():
                     others.append(raw.strip())
                 continue
             samples.append((elapsed, values))
+            # 화면은 초당 10번만 갱신 (50fps 보드도 버벅이지 않게)
+            if elapsed - last_draw < 0.1:
+                continue
+            last_draw = elapsed
 
             # 실시간 표시 (이전 출력 위에 덮어쓰기)
             if shown_lines:
