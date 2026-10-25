@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../models/mock_data.dart';
+import '../services/sitting_stats.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
 
 /// 집중 챌린지 — 피그마 「09 집중 챌린지」.
 ///
-/// 값은 MockData 기반. 서버가 붙으면 `GET /challenges/{user_id}` 로 갈아끼운다.
-/// (서버는 현재 목표 30분이 하드코딩돼 있어, 코스 선택을 반영하려면
-///  서버 쪽도 목표 시간을 파라미터로 받도록 고쳐야 한다.)
+/// 하루 목표만큼 **정자세로 앉아 있기**. 값은 모두 실제 착석 기록([SittingStats],
+/// 로그인 사용자별)에서 계산한다. 서버 `/challenges` 와 같은 규칙:
+/// 그날 정자세 누적 시간이 목표 이상이면 성공.
 class ChallengeScreen extends StatefulWidget {
   const ChallengeScreen({super.key, this.onBack});
 
@@ -21,13 +21,32 @@ class ChallengeScreen extends StatefulWidget {
 
 class _ChallengeScreenState extends State<ChallengeScreen> {
   static const _courses = [25, 30, 50, 90];
-  int _goal = MockData.challengeGoal;
+  static const _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
 
-  int get _done => MockData.challengeDone.clamp(0, _goal);
-  double get _ratio => _goal == 0 ? 0 : _done / _goal;
+  SittingStats get _s => SittingStats.instance;
+  int get _goal => _s.challengeGoalMin;
+  int get _done => _s.today.straight.inMinutes;
+  double get _ratio => _goal == 0 ? 0 : (_done / _goal).clamp(0.0, 1.0);
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: SittingStats.instance,
+      builder: (context, _) => _build(context),
+    );
+  }
+
+  Widget _build(BuildContext context) {
+    final today = _s.today;
+    final week = _s.lastWeek;
+    final streak = _s.streak;
+    final pct = (today.straightRatio * 100).round();
+    final left = (_goal - _done).clamp(0, _goal);
+    final badges = [
+      _BadgeData('첫 완주', Icons.emoji_events, _s.everAchieved, AppColors.infoText),
+      _BadgeData('3일 연속', Icons.local_fire_department, streak >= 3, AppColors.warnIcon),
+      _BadgeData('5일 연속', Icons.workspace_premium, streak >= 5, AppColors.primary),
+    ];
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: BmScreen(
@@ -55,13 +74,19 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
                         Text('$_done',
                             style: AppText.display.copyWith(fontSize: 56)),
                         const SizedBox(height: 2),
-                        Text('$_goal분 중 $_done분 지났어요',
+                        Text(
+                            _done >= _goal
+                                ? '오늘 목표 달성! 🎉'
+                                : '바른 자세 $_goal분 중 $_done분 · $left분 남았어요',
                             style: AppText.caption),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const BmPill(label: '바른 자세 유지율 84%'),
+                  BmPill(
+                      label: today.hasData
+                          ? '바른 자세 유지율 $pct%'
+                          : '아직 오늘 착석 기록이 없어요'),
                 ],
               ),
             ),
@@ -88,7 +113,7 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
                           child: BmChip(
                             label: '${_courses[i]}분',
                             selected: _courses[i] == _goal,
-                            onTap: () => setState(() => _goal = _courses[i]),
+                            onTap: () => _s.setChallengeGoal(_courses[i]),
                           ),
                         ),
                       ],
@@ -108,19 +133,19 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
                   children: [
                     BmCardCaption(
                       title: '연속 달성',
-                      trailing: '${_streak()}일째 🔥',
+                      trailing: streak > 0 ? '$streak일째 🔥' : '오늘부터 시작해요',
                     ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        for (var i = 0; i < MockData.week.length; i++) ...[
+                        for (var i = 0; i < week.length; i++) ...[
                           if (i > 0) const SizedBox(width: 8),
                           Expanded(
                             child: _DayDot(
-                              label: const ['월', '화', '수', '목', '금', '토', '일'][i],
-                              done: MockData.week[i] >= 1.0,
-                              partial: MockData.week[i] > 0 &&
-                                  MockData.week[i] < 1.0,
+                              label: _weekdays[week[i].day.weekday - 1],
+                              done: _s.achieved(week[i]),
+                              partial: !_s.achieved(week[i]) &&
+                                  week[i].straight.inMinutes > 0,
                             ),
                           ),
                         ],
@@ -137,37 +162,26 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
                   const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
               child: Row(
                 children: [
-                  for (var i = 0; i < MockData.badges.length; i++) ...[
+                  for (var i = 0; i < badges.length; i++) ...[
                     if (i > 0) const SizedBox(width: 10),
-                    Expanded(child: _Badge(item: MockData.badges[i])),
+                    Expanded(child: _Badge(item: badges[i])),
                   ],
                 ],
               ),
             ),
 
             const Spacer(),
-
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.screen, 16, AppSpacing.screen, 12),
-              child: BmGhostButton(label: '챌린지 그만두기', onPressed: () {}),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(
+                  AppSpacing.screen, 16, AppSpacing.screen, 16),
+              child: Text('방석에 정자세로 앉아 있던 시간만 쌓여요',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
             ),
           ],
         ),
       ),
     );
-  }
-
-  int _streak() {
-    var n = 0;
-    for (final v in MockData.week) {
-      if (v >= 1.0) {
-        n++;
-      } else {
-        break;
-      }
-    }
-    return n;
   }
 }
 
@@ -206,10 +220,19 @@ class _DayDot extends StatelessWidget {
   }
 }
 
+class _BadgeData {
+  const _BadgeData(this.label, this.icon, this.unlocked, this.color);
+
+  final String label;
+  final IconData icon;
+  final bool unlocked;
+  final Color color;
+}
+
 class _Badge extends StatelessWidget {
   const _Badge({required this.item});
 
-  final BadgeItem item;
+  final _BadgeData item;
 
   @override
   Widget build(BuildContext context) {
