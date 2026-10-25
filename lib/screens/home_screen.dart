@@ -41,6 +41,12 @@ class _HomeScreenState extends State<HomeScreen> {
   double _fps = 0;
   bool _showIndex = false;
 
+  // 등받이 보드 (표시·진단 전용 — 판정은 좌석 32ch 만 쓴다)
+  StreamSubscription<SensorFrame>? _backSub;
+  SensorFrame? _lastBackFrame;
+  final List<DateTime> _backRecvTimes = [];
+  double _backFps = 0;
+
   // ── 온디바이스 자세 판정 (assets/model 의 TFLite) ────────────────
   /// 모델 로드 전에는 null. 로드 실패하면 계속 null 이고 [_modelError] 에 원인이 담긴다.
   PostureModel? _model;
@@ -77,10 +83,30 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadModel();
     // BLE 프레임 구독 + fps 감쇠 타이머
     _frameSub = _ble.frames.listen(_onFrame);
+    _backSub = _ble.backFrames.listen(_onBackFrame);
     _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final now = DateTime.now();
       _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
-      if (mounted) setState(() => _fps = _recvTimes.length.toDouble());
+      _backRecvTimes
+          .removeWhere((t) => now.difference(t).inMilliseconds > 1000);
+      if (mounted) {
+        setState(() {
+          _fps = _recvTimes.length.toDouble();
+          _backFps = _backRecvTimes.length.toDouble();
+        });
+      }
+    });
+  }
+
+  /// 등받이 프레임은 화면 표시용으로만 보관한다. 판정([_onFrame])과 무관.
+  void _onBackFrame(SensorFrame f) {
+    final now = f.receivedAt;
+    _backRecvTimes.add(now);
+    _backRecvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
+    if (!mounted) return;
+    setState(() {
+      _lastBackFrame = f;
+      _backFps = _backRecvTimes.length.toDouble();
     });
   }
 
@@ -173,6 +199,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _frameSub?.cancel();
+    _backSub?.cancel();
     _fpsTimer?.cancel();
     _model?.dispose();
     _ble.disconnect();
@@ -446,7 +473,8 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Expanded(
           child: Text(
-            'frameNo ${_lastFrame?.frameNo ?? '—'} · fps ${_fps.toStringAsFixed(0)}',
+            'frameNo ${_lastFrame?.frameNo ?? '—'} · fps ${_fps.toStringAsFixed(0)}'
+            ' · 등받이 frameNo ${_lastBackFrame?.frameNo ?? '—'} · fps ${_backFps.toStringAsFixed(0)}',
             style: const TextStyle(
               fontSize: 11,
               color: AppColors.textTertiary,
@@ -545,6 +573,30 @@ class _HomeScreenState extends State<HomeScreen> {
       final row = _rows[r];
       for (var c = 0; c < row.length; c++) {
         grid[r][c] = _frame[row[c]] / maxV;
+      }
+    }
+    return grid;
+  }
+
+  /// 등받이 32채널을 [SensorLayout.backDisplayRows] 순서(어깨 → 중간 → 허리,
+  /// 각 줄 Right → Left)로 0~1 정규화한 값. 등받이 자체 최댓값 기준.
+  /// 등받이 보드 프레임은 ch0~31 이므로 64ch 번호에서 backFirstCh 를 빼서 읽는다.
+  // ignore: unused_element  (작업 4단계 — 등받이 히트맵 UI 에서 사용 예정)
+  List<List<double>> get _backHeatGrid {
+    const rows = SensorLayout.backDisplayRows;
+    final grid = [for (final row in rows) List<double>.filled(row.length, 0)];
+    final back = _lastBackFrame?.channels ?? const <int>[];
+    if (back.length < SensorLayout.nBackChannels) return grid;
+
+    var maxV = 0;
+    for (final v in back) {
+      if (v > maxV) maxV = v;
+    }
+    if (maxV <= 0) return grid;
+
+    for (var r = 0; r < rows.length; r++) {
+      for (var c = 0; c < rows[r].length; c++) {
+        grid[r][c] = back[rows[r][c] - SensorLayout.backFirstCh] / maxV;
       }
     }
     return grid;
