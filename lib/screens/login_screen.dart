@@ -167,6 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           suffix: '월',
                           number: true,
                           maxLength: 2,
+                          maxValue: 12,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -177,6 +178,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           suffix: '일',
                           number: true,
                           maxLength: 2,
+                          maxValue: 31,
                         ),
                       ),
                     ],
@@ -290,6 +292,7 @@ class _TextBox extends StatelessWidget {
     this.suffix,
     this.number = false,
     this.maxLength,
+    this.maxValue,
   });
 
   final TextEditingController controller;
@@ -297,6 +300,9 @@ class _TextBox extends StatelessWidget {
   final String? suffix;
   final bool number;
   final int? maxLength;
+
+  /// 숫자 칸의 최댓값 (월 12, 일 31). 넘는 입력·'00' 은 받지 않는다.
+  final int? maxValue;
 
   @override
   Widget build(BuildContext context) {
@@ -306,6 +312,7 @@ class _TextBox extends StatelessWidget {
       inputFormatters: [
         if (number) FilteringTextInputFormatter.digitsOnly,
         if (maxLength != null) LengthLimitingTextInputFormatter(maxLength),
+        if (maxValue != null) _RangeFormatter(maxValue!),
       ],
       style: const TextStyle(
         fontSize: 15,
@@ -385,5 +392,22 @@ class _GenderChip extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 1 ~ [max] 사이 숫자만 받는다. '0' 은 '05' 처럼 앞자리로만 허용하고 '00' 은 막는다.
+class _RangeFormatter extends TextInputFormatter {
+  _RangeFormatter(this.max);
+
+  final int max;
+
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final t = newValue.text;
+    if (t.isEmpty || t == '0') return newValue;
+    final v = int.tryParse(t);
+    if (v == null || v < 1 || v > max) return oldValue;
+    return newValue;
   }
 }
