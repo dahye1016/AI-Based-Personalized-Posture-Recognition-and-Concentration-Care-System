@@ -10,9 +10,15 @@ import 'screens/splash_screen.dart';
 import 'screens/stretch_screen.dart';
 import 'services/api_service.dart';
 import 'services/ble_service.dart';
+import 'services/sitting_stats.dart';
 import 'theme/app_theme.dart';
 
-void main() => runApp(const PostureCareApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 리포트용 착석 기록을 기기에서 불러온다 (실패해도 앱은 뜬다).
+  await SittingStats.instance.load();
+  runApp(const PostureCareApp());
+}
 
 class PostureCareApp extends StatelessWidget {
   const PostureCareApp({super.key});

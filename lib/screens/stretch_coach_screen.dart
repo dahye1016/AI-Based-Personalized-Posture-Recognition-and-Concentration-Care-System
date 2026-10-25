@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/sitting_stats.dart';
 import '../services/stretch_log.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
@@ -78,6 +79,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
 
   /// 마지막 동작까지 끝났다. 완료 화면(11-D)으로 교체한다.
   void _finish() {
+    SittingStats.instance.recordStretch();
     final total = widget.routine.moves.length;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(

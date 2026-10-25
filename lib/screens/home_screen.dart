@@ -187,6 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final alert = PostureAlert(posture: p, heldFor: held, at: at);
     AlertStore.instance.add(alert);
+    SittingStats.instance.recordAlert();
 
     if (!mounted || _alertOpen) return;
     _alertOpen = true;

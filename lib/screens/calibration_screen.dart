@@ -591,11 +591,6 @@ class _MeasuringView extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(
                 AppSpacing.screen, 8, AppSpacing.screen, 8),
@@ -657,10 +652,8 @@ class _MeasuringView extends StatelessWidget {
               ),
             ),
           ),
-                ],
-              ),
-            ),
-          ),
+          // BmScreen 이 스크롤을 감싸므로 작은 화면에서도 잘리지 않는다.
+          const Spacer(),
           Padding(
             padding: const EdgeInsets.fromLTRB(
                 AppSpacing.screen, 20, AppSpacing.screen, 12),
