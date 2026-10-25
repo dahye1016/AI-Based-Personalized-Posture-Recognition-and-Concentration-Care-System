@@ -129,9 +129,8 @@ class BleService {
   // ── 공개 API ─────────────────────────────────────────────────────
   /// 좌석·등받이를 한 스캔 창에서 함께 찾아 연결한다.
   ///
-  /// 반환값은 **좌석**이 초기 스캔 창 안에 연결됐는지다 (실패해도 좌석은 자동 재시도
-  /// 하지 않는다 — 사용자가 다시 누른다). 등받이는 초기 창에서 못 찾으면, 수동 해제가
-  /// 아닌 한 backoff 로 계속 재스캔한다 (보드를 늦게 켜는 경우 대비).
+  /// 반환값은 **좌석**이 초기 스캔 창 안에 연결됐는지다. 좌석·등받이 모두 초기 창에서
+  /// 못 찾으면, 수동 해제가 아닌 한 backoff 로 계속 재스캔한다 (보드를 늦게 켜는 경우 대비).
   Future<bool> connect() async {
     try {
       _manualDisconnect = false;
@@ -170,11 +169,15 @@ class BleService {
       }
       final results = _scanFor(BleBoard.values.toSet());
 
-      // 등받이는 좌석 결과를 기다리지 않고 따로 처리한다.
+      // 두 보드 모두, 처음 스캔 창에서 못 찾으면 backoff 로 계속 다시 찾는다.
+      // (예전엔 좌석은 재시도하지 않아, 보드가 늦게 켜지거나 잠깐 다른 기기에
+      //  붙어 있으면 '꺼짐'으로 남았다.)
       results[BleBoard.back]!.then((ok) {
         if (!ok && !_manualDisconnect) _scheduleReconnect(_back);
       });
-      return await results[BleBoard.seat]!;
+      final seatOk = await results[BleBoard.seat]!;
+      if (!seatOk && !_manualDisconnect) _scheduleReconnect(_seat);
+      return seatOk;
     } catch (e) {
       debugPrint('[BLE] connect 에러: $e');
       return false;
