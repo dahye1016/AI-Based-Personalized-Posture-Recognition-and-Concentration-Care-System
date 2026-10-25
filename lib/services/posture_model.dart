@@ -10,9 +10,10 @@ import 'posture_preprocessor.dart';
 
 /// 온디바이스 자세 분류기. 좌석+등받이 병합 64ch [SensorFrame] 하나를 7클래스 중 하나로 판정한다.
 ///
-/// 모델·json 은 feat/dahye(c0df724) 결과를 assets/model/ 에 복사해 둔 것이다.
+/// 모델·json 은 feat/dahye(125e5ef) 결과를 assets/model/ 에 복사해 둔 것이다.
 ///   - posture_model_corrected.tflite : 입력 [1, 128] float32 (원시 64 + 기준값 64), 출력 [1, 7] 확률
-///                                      (정자세 보정 규칙이 모델 안에 포함됨)
+///                                      (규칙 보정 없음. 정자세와 나쁜 자세를 섞은 '반쯤 한' 프레임을
+///                                       함께 학습해 살짝 기대기·숙이기·다리 꼬기도 잡는다)
 ///   - norm_stats_corrected.json      : 라벨 순서, 입력 shape, raw_input (mean/std 없음)
 /// 출력은 이미 확률이므로 softmax 를 하지 않는다 (argmax 만 쓴다).
 /// 이전 부스팅 모델(posture_model_gbt / norm_stats_gbt)도 assets 에 남아 있어 상수만 바꾸면 되돌릴 수 있다.
