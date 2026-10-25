@@ -75,9 +75,13 @@ class PoseView {
 
 /// 동작 하나의 판정 규칙. [value] 가 null 이면 필요한 관절이 안 보이는 것.
 class MoveRule {
-  const MoveRule(this.value, this.threshold, this.unit);
+  const MoveRule(this.value, this.threshold, this.unit, {this.usesFace = false});
 
-  final double? Function(PoseView p) value;
+  /// 얼굴 인식(고개 각도)으로 판정하는 동작이면 null — [RepCounter.addHead] 를 쓴다.
+  final double? Function(PoseView p)? value;
+
+  /// 고개 각도로 판정하는 동작인지 (목 뒤로 젖히기).
+  final bool usesFace;
 
   /// 이 값 이상이면 동작 중.
   final double threshold;
@@ -92,7 +96,9 @@ class StretchPoses {
 
   static MoveRule? ruleFor(String move) => switch (move) {
         '목 옆으로 늘이기' => const MoveRule(_neckSide, 8, '°'),
-        '목 뒤로 젖히기' => const MoveRule(_neckBack, 0.3, ''),
+        // 2D 관절만으로는 고개를 든 각도가 거의 안 보여서 얼굴 인식 pitch 를 쓴다.
+        // 판정값 = 동작 시작 1초의 정면 각도에서 고개가 움직인 각도.
+        '목 뒤로 젖히기' => const MoveRule(null, 15, '°', usesFace: true),
         '팔 양 옆으로 늘리기' => const MoveRule(_armsSide, 0.1, ''),
         '팔 위로 뻗기' => const MoveRule(_armsUp, 0.0, ''),
         '몸통 옆으로 늘이기' => const MoveRule(_torsoSide, 5, '°'),
@@ -106,14 +112,6 @@ class StretchPoses {
     final a = p.lEar, b = p.rEar;
     if (a == null || b == null) return null;
     return PoseView.tiltDeg(a, b);
-  }
-
-  /// 1 − (지금 코−눈 높이차 / 정면일 때 코−눈 높이차).
-  /// 턱을 들면 화면에서 코가 눈 쪽으로 올라붙어 커진다. 귀 대신 잘 잡히는 눈·코만 쓴다.
-  static double? _neckBack(PoseView p) {
-    final d = p.noseDrop, base = p.noseDropBase;
-    if (d == null || base == null || base <= 0) return null;
-    return 1 - d / base;
   }
 
   /// 손(없으면 팔꿈치)이 어깨 바깥으로 나간 거리 중 작은 쪽 / 어깨너비.
@@ -202,6 +200,29 @@ class RepCounter {
   /// 지금 동작 자세를 하고 있는지 (화면 배지용).
   bool get holding => _holding;
 
+  final List<double> _pitchWarmup = [];
+  double? _pitchBase;
+
+  /// 얼굴 인식 동작용: 고개 pitch(°) 를 넣는다. 1회가 완성되면 true.
+  /// 동작 시작 후 처음 10프레임(약 1초) 평균을 '정면' 기준으로 잡고,
+  /// 그 기준에서 고개가 움직인 각도를 판정값으로 쓴다 (기기마다 부호가 달라도 되게 절댓값).
+  bool addHead(double? pitch, DateTime at) {
+    if (pitch == null) {
+      lastValue = null;
+      return false;
+    }
+    if (_pitchBase == null) {
+      _pitchWarmup.add(pitch);
+      lastValue = 0;
+      if (_pitchWarmup.length >= 10) {
+        _pitchBase =
+            _pitchWarmup.reduce((a, b) => a + b) / _pitchWarmup.length;
+      }
+      return false;
+    }
+    return _step((pitch - _pitchBase!).abs(), at);
+  }
+
   /// 프레임 하나를 넣는다. 1회가 완성되면 true.
   bool add(Pose pose, DateTime at) {
     final view = PoseView(pose);
@@ -212,7 +233,12 @@ class RepCounter {
     if (nd != null && nd > _maxNoseDrop) _maxNoseDrop = nd;
     view.noseDropBase = _maxNoseDrop;
 
-    final v = rule.value(view);
+    final f = rule.value;
+    if (f == null) return false;
+    return _step(f(view), at);
+  }
+
+  bool _step(double? v, DateTime at) {
     lastValue = v;
     if (v == null) return false; // 관절이 안 보이면 상태 유지
 

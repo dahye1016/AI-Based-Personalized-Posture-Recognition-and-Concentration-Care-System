@@ -60,13 +60,16 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
   }
 
   /// [PoseCamera] 가 프레임마다 부른다.
-  void _onPose(Pose? pose, DateTime at) {
+  void _onPose(Pose? pose, HeadAngles? head, DateTime at) {
     final visible = pose != null && PoseView(pose).upperBodyVisible;
     var holding = false;
     var count = _count;
     final counter = _counter;
-    if (pose != null && counter != null && count < _targetCount) {
-      if (counter.add(pose, at)) count++;
+    if (counter != null && count < _targetCount) {
+      final done = counter.rule.usesFace
+          ? counter.addHead(head?.pitch, at)
+          : (pose != null && counter.add(pose, at));
+      if (done) count++;
       holding = counter.holding;
     }
     // 디버그 빌드에서는 판정값을 화면에 띄우므로 매 프레임 다시 그린다.
@@ -88,7 +91,7 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
     final u = c.rule.unit;
     String f(double x) => u == '°' ? x.toStringAsFixed(0) : x.toStringAsFixed(2);
     return v == null
-        ? '판정값: 관절 안 보임 (기준 ${f(c.rule.threshold)}$u)'
+        ? '판정값: ${c.rule.usesFace ? '얼굴' : '관절'} 안 보임 (기준 ${f(c.rule.threshold)}$u)'
         : '판정값 ${f(v)}$u / 기준 ${f(c.rule.threshold)}$u';
   }
 
@@ -143,7 +146,12 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
           Expanded(
             child: Stack(
               children: [
-                Positioned.fill(child: PoseCamera(onPose: _onPose)),
+                Positioned.fill(
+                  child: PoseCamera(
+                    onPose: _onPose,
+                    detectFace: _counter?.rule.usesFace ?? false,
+                  ),
+                ),
 
                 // 상단 바
                 Positioned(
