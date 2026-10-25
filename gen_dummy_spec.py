@@ -39,6 +39,10 @@ import pandas as pd
 import gen_dummy_64ch as G
 from posture_names import POSTURE_ORDER, POSTURE_TO_PCODE
 
+# 2026-10-25: 거북목은 모델에서 뺐다. 더미도 만들지 않는다 (다시 넣으려면 비울 것).
+EXCLUDE = ["turtle_neck"]
+POSTURES = [p for p in POSTURE_ORDER if p not in EXCLUDE]
+
 CH = [f"ch{i}" for i in range(64)]
 SEAT = [f"seat_{i + 1}" for i in range(32)]
 BACK = [f"back_{i + 1}" for i in range(32)]
@@ -195,14 +199,14 @@ def main():
         d = pd.read_csv(f)
         seats.append((d[CH].values.astype(float), str(d["person"].iloc[0])))
     mixed = []
-    for Xt, wt in tpl["turtle_neck"]:
+    for Xt, wt in (tpl["turtle_neck"] if "turtle_neck" in POSTURES else []):
         for Xs, ws in seats:
             n = min(len(Xt), len(Xs))
             X = resample(Xt, n).copy()
             X[:, :32] = resample(Xs, n)[:, :32]
             mixed.append((X, wt if wt == ws else f"{wt}+{ws}"))
     tpl["turtle_neck"] = mixed
-    for p in POSTURE_ORDER:
+    for p in POSTURES:
         print(f"재료 {p:17s} {len(tpl[p])}개 ({', '.join(sorted({w for _, w in tpl[p]}))})")
     print(f"어깨 재료 오른쪽 {len(donors['R'])}개, 왼쪽 {len(donors['L'])}개")
     if not tpl["not_sitting"]:
@@ -211,7 +215,7 @@ def main():
     frames, made, fail = [], 0, 0
     persons = [G.make_person(i + 1, rng) for i in range(a.persons)]
     for P in persons:
-        for post in POSTURE_ORDER:
+        for post in POSTURES:
             for tr in range(1, a.trials + 1):
                 ok = False
                 for att in range(80):

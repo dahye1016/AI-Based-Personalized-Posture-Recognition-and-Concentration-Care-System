@@ -43,7 +43,12 @@ OUT_TFLITE = ROOT / "ml" / "posture_model_gbt.tflite"
 OUT_PKL = ROOT / "ml" / "posture_model_gbt.pkl"
 OUT_JSON = ROOT / "ml" / "norm_stats_gbt.json"
 RUN_DIR = ROOT / "ml" / "runs" / "gbt"
-CH, L, N = C.CH, C.L, C.N
+CH, L, N = C.CH, C.L, C.N           # N = 8 (평가용 혼동행렬은 8x8 로 두고 뺀 자세 칸은 비워 둔다)
+# 2026-10-25: 거북목은 학습·평가·출력에서 뺀다 (7자세). 거북목이 마지막 번호(p7)라 나머지 번호 p0~p6 은 그대로다.
+DROP = ["turtle_neck"]
+LABELS = [p for p in T.LABEL_ORDER if p not in DROP]
+assert LABELS == T.LABEL_ORDER[:len(LABELS)], "뺀 자세가 마지막 번호가 아니면 번호가 밀린다"
+N_OUT = len(LABELS)                 # 모델 출력 개수 (7)
 W_DIFF = 0.5
 EVERY = 3            # 학습 데이터 3행마다 1개 (연속 프레임은 거의 같다)
 GBT = dict(max_iter=200, learning_rate=0.1, class_weight="balanced", random_state=42)
@@ -74,7 +79,7 @@ def fit(X, B, y):
 def proba(models, X, B):
     fa, fd = features(X, B)
     ma, md = models
-    out = np.zeros((len(X), N))
+    out = np.zeros((len(X), N_OUT))
     out[:, ma.classes_] += (1 - W_DIFF) * ma.predict_proba(fa)
     out[:, md.classes_] += W_DIFF * md.predict_proba(fd)
     return out
@@ -123,11 +128,11 @@ class TreeEnsemble(nn.Module):
                 Dm[t, li] = float(lefts)
             if not internal:                             # 잎 하나뿐인 나무
                 Dm[t, 0] = 0.0
-        onehot = np.zeros((nt, N), np.float32)
+        onehot = np.zeros((nt, N_OUT), np.float32)
         onehot[np.arange(nt), cls] = 1.0
-        base = np.zeros(N, np.float32)
+        base = np.zeros(N_OUT, np.float32)
         base[model.classes_] = np.ravel(model._baseline_prediction).astype(np.float32)
-        missing = [c for c in range(N) if c not in set(model.classes_)]
+        missing = [c for c in range(N_OUT) if c not in set(model.classes_)]
         base[missing] = -1e4
         self.register_buffer("feat", torch.tensor(feat.reshape(-1)))
         self.register_buffer("thr", torch.tensor(np.where(np.isinf(thr), 3.0e38, thr).reshape(1, nt, ni)))
@@ -167,7 +172,10 @@ def main():
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     T.ONLY_PASSING["on"] = False
     df = T.load_raw()
+    df = df[~df["posture"].isin(DROP)].reset_index(drop=True)          # 뺀 자세는 학습·평가 모두 제외
     dm = T.load_dummy(C.DUMMY_GZ, C.DUMMY_EVERY)
+    dm = dm[~dm["posture"].isin(DROP)].reset_index(drop=True)
+    print(f"뺀 자세: {DROP} -> 출력 {N_OUT}자세 {LABELS}")
     cal, used = C.real_calibration()
     cdm = C.dummy_calibration(dm)
     persons = sorted(df["person"].unique())
@@ -209,7 +217,7 @@ def main():
     pooled = lambda c: float(np.trace(c) / c.sum())
     r_ok, r_all = rates(conf_ok), rates(conf_all)
     print("\n자세별 정확도 (사람 단위, 처음 보는 사람)\n  자세               정의에 맞는 녹화   전체 녹화")
-    for i, name in enumerate(T.LABEL_ORDER):
+    for i, name in enumerate(LABELS):
         f = lambda v: f"{v * 100:6.1f}%" if v is not None else "    -  "
         print(f"  p{i} {name:16s}    {f(r_ok[i])}         {f(r_all[i])}")
     print(f"  합산                   {pooled(conf_ok) * 100:6.1f}%         {pooled(conf_all) * 100:6.1f}%")
@@ -263,17 +271,18 @@ def main():
           f"/ 파일 {OUT_TFLITE.stat().st_size / 1e6:.1f}MB")
 
     stats = {
-        "label_order": T.LABEL_ORDER,
-        "class_index": L,
-        "label_names": {f"p{i}": T.KOREAN[i] for i in range(N)},
-        "num_classes": N,
+        "label_order": LABELS,
+        "class_index": {p: L[p] for p in LABELS},
+        "label_names": {f"p{i}": T.KOREAN[i] for i in range(N_OUT)},
+        "num_classes": N_OUT,
+        "dropped_postures": DROP,
         "model_io": {
             "tflite_file": OUT_TFLITE.name,
             "input_shape": in_shape,
             "input_dtype": "float32",
             "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63]. 정규화하지 말 것",
             "output_shape": out_shape,
-            "output": "8자세 확률 (argmax 가 label_order 인덱스). 규칙 없음",
+            "output": f"{N_OUT}자세 확률 (argmax 가 label_order 인덱스). 규칙 없음. 거북목 없음",
             "sklearn_vs_tflite_agreement": agree,
         },
         "raw_input": True,
@@ -289,7 +298,7 @@ def main():
         "person_split_eval": {
             "method": "leave-one-person-out (실측만, 캘리브레이션 5초 제외)",
             "pooled_accuracy_spec": pooled(conf_ok), "pooled_accuracy_all": pooled(conf_all),
-            "per_class_spec": dict(zip(T.LABEL_ORDER, r_ok)), "per_class_all": dict(zip(T.LABEL_ORDER, r_all)),
+            "per_class_spec": dict(zip(LABELS, r_ok)), "per_class_all": dict(zip(LABELS, r_all)),
         },
     }
     OUT_JSON.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
