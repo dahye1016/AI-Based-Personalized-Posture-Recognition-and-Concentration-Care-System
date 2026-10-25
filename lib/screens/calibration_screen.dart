@@ -21,7 +21,12 @@ class CalibrationScreen extends StatefulWidget {
     required this.ble,
     this.duration = const Duration(seconds: 10),
     this.onDone,
+    this.onBack,
   });
+
+  /// 안내 화면의 뒤로가기. 앱 진입 흐름(AppFlow)에서는 이전 단계로 돌아간다.
+  /// 없으면 Navigator 로 닫는다(다른 화면에서 push 로 연 경우).
+  final VoidCallback? onBack;
 
   /// 측정용 BLE 연결. 연결·해제는 호출한 쪽(AppFlow)이 맡는다.
   final BleService ble;
@@ -250,7 +255,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         _Step.intro => _IntroView(
             seconds: widget.duration.inSeconds,
             onStart: _start,
-            onClose: () => Navigator.of(context).maybePop(),
+            onClose: widget.onBack ?? () => Navigator.of(context).maybePop(),
           ),
         _Step.measuring => _MeasuringView(
             remaining: _remaining,

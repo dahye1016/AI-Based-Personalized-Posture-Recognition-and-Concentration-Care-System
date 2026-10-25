@@ -55,15 +55,42 @@ class _AppFlowState extends State<AppFlow> {
     super.dispose();
   }
 
+  /// 지나온 단계. 뒤로가기 때 하나씩 되돌린다.
+  final List<_Phase> _history = [];
+
   void _go(_Phase next) {
     if ((next == _Phase.calibration || next == _Phase.main) && _ble == null) {
       _ble = BleService()..connect();
     }
+    // 메인에 들어가면 진입 흐름은 끝났으니 되돌아가지 않는다.
+    if (next == _Phase.main) {
+      _history.clear();
+    } else {
+      _history.add(_phase);
+    }
     setState(() => _phase = next);
+  }
+
+  /// 이전 단계로. 더 돌아갈 곳이 없으면(스플래시·메인) 아무것도 하지 않는다.
+  void _back() {
+    if (_history.isEmpty) return;
+    setState(() => _phase = _history.removeLast());
   }
 
   @override
   Widget build(BuildContext context) {
+    // 진입 흐름은 화면을 바꿔 끼우는 방식이라 Navigator 뒤로가기가 없다.
+    // 시스템 뒤로가기(안드로이드 버튼·제스처)를 받아 이전 단계로 돌린다.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: _page(),
+    );
+  }
+
+  Widget _page() {
     return switch (_phase) {
       _Phase.splash => SplashScreen(
           onLogin: () => _go(_Phase.login),
@@ -72,13 +99,16 @@ class _AppFlowState extends State<AppFlow> {
       _Phase.login => LoginScreen(
           onDone: (_) => _go(_Phase.onboarding),
           onSkip: () => _go(_Phase.onboarding),
+          onBack: _back,
         ),
       _Phase.onboarding => OnboardingScreen(
           onStart: () => _go(_Phase.calibration),
+          onBack: _back,
         ),
       _Phase.calibration => CalibrationScreen(
           ble: _ble!,
           onDone: (_) => _go(_Phase.main),
+          onBack: _back,
         ),
       _Phase.main => RootNav(ble: _ble),
     };
