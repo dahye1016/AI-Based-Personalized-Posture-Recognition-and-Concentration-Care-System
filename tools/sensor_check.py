@@ -82,19 +82,27 @@ def main():
 
     port = args.port or find_port()
     print(f"포트 {port} @ {args.baud} 연결 중...")
-    ser = serial.Serial(port, args.baud, timeout=0.2)
-    time.sleep(2)  # 포트 열 때 ESP32가 리셋되므로 잠깐 대기
+    ser = serial.Serial()
+    ser.port, ser.baudrate, ser.timeout = port, args.baud, 0.2
+    # 윈도우에서 DTR/RTS가 켜진 채 열리면 ESP32가 리셋 상태로 멈춰 아무것도 안 보냄
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    time.sleep(1.5)
     ser.reset_input_buffer()
 
     samples = []      # (경과초, [값...])
     others = []       # 센서값이 아닌 줄 (로그 확인용)
     start = time.time()
     shown_lines = 0
+    total_bytes = 0
     print(f"{args.seconds:.0f}초 동안 측정합니다. 방석에 앉았다 일어났다 해보세요.\n")
 
     try:
         while (elapsed := time.time() - start) < args.seconds:
-            raw = ser.readline().decode("utf-8", errors="replace")
+            chunk = ser.readline()
+            total_bytes += len(chunk)
+            raw = chunk.decode("utf-8", errors="replace")
             if not raw:
                 continue
             values = parse_line(raw)
@@ -120,7 +128,10 @@ def main():
 
     print()
     if not samples:
-        print("센서 데이터를 한 줄도 못 받았습니다.")
+        print(f"센서 데이터를 한 줄도 못 받았습니다. (받은 바이트: {total_bytes})")
+        print("연결된 포트 목록:")
+        for p in list_ports.comports():
+            print(f"    {p.device:<8} {p.description}")
         if others:
             print("대신 받은 출력 (마지막 5줄):")
             for o in others[-5:]:
@@ -128,7 +139,10 @@ def main():
             print("→ fsr_ble 펌웨어는 BLE 연결 전엔 값을 안 보냅니다. "
                   "arduino/fsr_serial_check 스케치를 올려서 다시 해보세요.")
         else:
-            print("→ 포트/보드레이트 확인, 시리얼 모니터가 열려있으면 닫고 다시 실행하세요.")
+            print("→ 위 목록에서 ESP32(CP210x / CH340 / USB-SERIAL) 포트로 --port 지정,")
+            print("  보드의 EN(RST) 버튼을 한 번 눌러보고, 시리얼 모니터가 열려있으면 닫으세요.")
+            print("  보드에 fsr_ble 펌웨어가 올라가 있으면 BLE 연결 전엔 값을 안 보냅니다")
+            print("  → arduino/fsr_serial_check 스케치를 올리세요.")
         return
 
     n_ch = max(len(v) for _, v in samples)
