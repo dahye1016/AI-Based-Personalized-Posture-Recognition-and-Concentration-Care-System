@@ -55,6 +55,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   /// 등받이(PoseLab-Back) 프레임 — 측정 화면 표시용. 기준값 계산에는 아직 안 쓴다.
   StreamSubscription<List<int>>? _backSub;
   List<double> _backLevels = const [];
+
+  /// 등받이 채널별 합·프레임 수 — 64ch 기준값(좌석 32 + 등받이 32)을 만들 때 쓴다.
+  List<double> _backSum = List<double>.filled(SensorLayout.nBackChannels, 0);
+  int _backFrames = 0;
   Timer? _ticker;
   Stopwatch? _watch;
 
@@ -98,6 +102,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _sum = List<double>.filled(SensorLayout.nChannels, 0);
     _levels = List<double>.filled(SensorLayout.nChannels, 0);
     _backLevels = List<double>.filled(SensorLayout.nBackChannels, 0);
+    _backSum = List<double>.filled(SensorLayout.nBackChannels, 0);
+    _backFrames = 0;
     _frames = 0;
     _unstable = 0;
     _baseTotal = null;
@@ -131,7 +137,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     final levels = List<double>.filled(SensorLayout.nBackChannels, 0);
     for (var i = 0; i < levels.length && i < ch.length; i++) {
       levels[i] = (ch[i] / maxV).clamp(0.0, 1.0);
+      _backSum[i] += ch[i];
     }
+    _backFrames++;
     if (mounted) setState(() => _backLevels = levels);
   }
 
@@ -193,6 +201,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
           List.unmodifiable([for (final s in _sum) s / _frames]),
       frames: _frames,
       elapsed: widget.duration,
+      backMean: _backFrames == 0
+          ? null
+          : List.unmodifiable([for (final s in _backSum) s / _backFrames]),
     );
     setState(() {
       _result = r;
@@ -295,7 +306,18 @@ class CalibrationResult {
     required this.channelMean,
     required this.frames,
     required this.elapsed,
+    this.backMean,
   });
+
+  /// 등받이 채널별 평균 (등받이 보드 ch0~31). 등받이가 안 들어왔으면 null.
+  final List<double>? backMean;
+
+  /// 판정 모델 기준값 — 좌석 32 + 등받이 32. 등받이가 없으면 null.
+  List<double>? get baseline64 {
+    final b = backMean;
+    if (b == null || channelMean.length != 32 || b.length != 32) return null;
+    return [...channelMean, ...b];
+  }
 
   /// 채널별 최대 압력. 서버 보정값(factor = FULL_SCALE / max)에 쓴다.
   final List<int> channelMax;

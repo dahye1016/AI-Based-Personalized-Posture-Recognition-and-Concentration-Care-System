@@ -15,6 +15,7 @@ import '../services/posture_model.dart';
 import '../services/sitting_stats.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
+import 'calibration_screen.dart';
 import '../widgets/seat_heatmap.dart';
 import 'alert_history_screen.dart';
 import 'posture_alert_screen.dart';
@@ -295,6 +296,36 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  /// 정자세 다시 측정 → 결과(좌석+등받이 64ch 평균)를 판정 기준값으로 쓴다.
+  Future<void> _remeasure() async {
+    CalibrationResult? result;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CalibrationScreen(
+        ble: _ble,
+        onDone: (r) => result = r,
+      ),
+    ));
+    final r = result;
+    if (r == null || !mounted) return;
+    final base = r.baseline64;
+    final m = _model;
+    String msg;
+    if (base == null) {
+      msg = '등받이 센서 값이 없어 기준값을 바꾸지 않았어요. 등받이를 연결하고 다시 재주세요';
+    } else if (m == null) {
+      msg = '모델을 불러오는 중이에요. 잠시 후 다시 재주세요';
+    } else {
+      m.setBaseline(base);
+      m.reset();
+      _resetBad();
+      setState(() => _posture = null);
+      msg = '정자세 기준을 새로 저장했어요';
+    }
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   /// 센서가 하나라도 연결(또는 탐색) 중이면 끊고, 아니면 다시 찾는다.
   Future<void> _toggleBle() async {
     final active = _ble.statusOf(BleBoard.seat) != BoardLinkStatus.off ||
@@ -431,6 +462,19 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(width: 6),
         _sensorChip('등받이', BleBoard.back, _backFps),
         const Spacer(),
+        GestureDetector(
+          onTap: _remeasure,
+          behavior: HitTestBehavior.opaque,
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            child: Text('정자세 재측정',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                )),
+          ),
+        ),
         if (_bleConnecting)
           const SizedBox(
             width: 16,

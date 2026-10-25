@@ -246,7 +246,9 @@ class SittingStats extends ChangeNotifier {
 
   // ── 저장 ───────────────────────────────────────────────────────
   /// 지금 사용자의 기록을 불러온다. 실패해도 빈 기록으로 계속 간다.
+  /// 게스트(로그인 안 함)는 저장하지 않으므로 앱을 켤 때마다 빈 기록으로 시작한다.
   Future<void> load() async {
+    if (_userKey == guestKey) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       _goalMin = prefs.getInt(_goalKey) ?? 30;
@@ -274,6 +276,7 @@ class SittingStats extends ChangeNotifier {
   }
 
   Future<void> _save() async {
+    if (_userKey == guestKey) return; // 게스트 기록은 저장하지 않는다
     try {
       _prune();
       final prefs = await SharedPreferences.getInstance();

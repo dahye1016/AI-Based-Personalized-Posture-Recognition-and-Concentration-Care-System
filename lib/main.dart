@@ -10,13 +10,12 @@ import 'screens/splash_screen.dart';
 import 'screens/stretch_screen.dart';
 import 'services/api_service.dart';
 import 'services/ble_service.dart';
-import 'services/sitting_stats.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 리포트용 착석 기록을 기기에서 불러온다 (실패해도 앱은 뜬다).
-  await SittingStats.instance.load();
+  // 리포트는 앱을 켤 때마다 빈 상태로 시작한다. 로그인하면 그 사람의 저장된
+  // 기록을 불러온다 (ProfileStore.save → SittingStats.switchUser).
   runApp(const PostureCareApp());
 }
 
