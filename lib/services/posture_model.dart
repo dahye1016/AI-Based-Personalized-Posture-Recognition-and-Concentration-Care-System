@@ -8,22 +8,30 @@ import '../models/posture_class.dart';
 import '../models/sensor_frame.dart';
 import 'posture_preprocessor.dart';
 
-/// 온디바이스 자세 분류기. 좌석+등받이 병합 64ch [SensorFrame] 하나를 8클래스 중 하나로 판정한다.
+/// 온디바이스 자세 분류기. 좌석+등받이 병합 64ch [SensorFrame] 하나를 7클래스 중 하나로 판정한다.
 ///
-/// 모델·json 은 feat/dahye(2bac866) 결과를 assets/model/ 에 복사해 둔 것이다.
-///   - posture_model_gbt.tflite : 입력 [1, 128] float32 (원시 64 + 기준값 64), 출력 [1, 8] 확률
-///   - norm_stats_gbt.json      : 라벨 순서, 입력 shape, raw_input (mean/std 없음)
+/// 모델·json 은 feat/dahye(c0df724) 결과를 assets/model/ 에 복사해 둔 것이다.
+///   - posture_model_corrected.tflite : 입력 [1, 128] float32 (원시 64 + 기준값 64), 출력 [1, 7] 확률
+///                                      (정자세 보정 규칙이 모델 안에 포함됨)
+///   - norm_stats_corrected.json      : 라벨 순서, 입력 shape, raw_input (mean/std 없음)
 /// 출력은 이미 확률이므로 softmax 를 하지 않는다 (argmax 만 쓴다).
+/// 이전 부스팅 모델(posture_model_gbt / norm_stats_gbt)도 assets 에 남아 있어 상수만 바꾸면 되돌릴 수 있다.
 ///
-/// 기준값이 없으면 판정하지 않는다(null). 지금은 [BaselineCollector] 로 앉은 첫 5초를
-/// 임시 기준값으로 쓴다. 캘리브레이션 화면이 64ch 기준값을 주면 [setBaseline] 으로 넣는다.
+/// 기준값: json 에 `calibration` 이 있는 모델(gbt)만 기준값을 쓴다 ([PosturePreprocessor.usesBaseline]).
+///   - 쓰는 모델: 기준값이 생길 때까지 판정하지 않는다(null). [BaselineCollector] 로 앉은 첫 5초를
+///     임시 기준값으로 쓰고, 캘리브레이션 화면이 64ch 기준값을 주면 [setBaseline] 으로 넣는다.
+///   - 안 쓰는 모델(corrected): 뒤 64개를 0 으로 채워 첫 프레임부터 판정한다.
 class PostureModel {
   PostureModel._(this._interpreter, this._pre, int smoothWindow)
       : _smoother = MajoritySmoother(window: smoothWindow),
-        _collector = BaselineCollector(channelCount: _pre.channelCount);
+        _collector = BaselineCollector(channelCount: _pre.channelCount),
+        _baseline = _pre.usesBaseline
+            ? null
+            : List<double>.unmodifiable(
+                List<double>.filled(_pre.channelCount, 0));
 
-  static const String modelAsset = 'assets/model/posture_model_gbt.tflite';
-  static const String statsAsset = 'assets/model/norm_stats_gbt.json';
+  static const String modelAsset = 'assets/model/posture_model_corrected.tflite';
+  static const String statsAsset = 'assets/model/norm_stats_corrected.json';
 
   final Interpreter _interpreter;
   final PosturePreprocessor _pre;
