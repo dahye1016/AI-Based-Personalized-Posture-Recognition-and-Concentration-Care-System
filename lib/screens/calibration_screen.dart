@@ -22,7 +22,12 @@ class CalibrationScreen extends StatefulWidget {
     this.duration = const Duration(seconds: 10),
     this.onDone,
     this.onBack,
+    this.onSkip,
   });
+
+  /// '측정 없이 시작하기'. 센서 없이 스트레칭(ML Kit) 등 다른 기능만 쓸 때.
+  /// 없으면 버튼을 그리지 않는다.
+  final VoidCallback? onSkip;
 
   /// 안내 화면의 뒤로가기. 앱 진입 흐름(AppFlow)에서는 이전 단계로 돌아간다.
   /// 없으면 Navigator 로 닫는다(다른 화면에서 push 로 연 경우).
@@ -256,6 +261,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             seconds: widget.duration.inSeconds,
             onStart: _start,
             onClose: widget.onBack ?? () => Navigator.of(context).maybePop(),
+            onSkip: widget.onSkip,
           ),
         _Step.measuring => _MeasuringView(
             remaining: _remaining,
@@ -309,11 +315,13 @@ class _IntroView extends StatelessWidget {
     required this.seconds,
     required this.onStart,
     required this.onClose,
+    this.onSkip,
   });
 
   final int seconds;
   final VoidCallback onStart;
   final VoidCallback onClose;
+  final VoidCallback? onSkip;
 
   static const _checks = [
     '등을 등받이에 완전히 붙이세요',
@@ -409,7 +417,21 @@ class _IntroView extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(
                 AppSpacing.screen, 24, AppSpacing.screen, 12),
-            child: BmPrimaryButton(label: '측정 시작하기', onPressed: onStart),
+            child: Column(
+              children: [
+                BmPrimaryButton(label: '측정 시작하기', onPressed: onStart),
+                if (onSkip != null)
+                  TextButton(
+                    onPressed: onSkip,
+                    child: const Text('측정 없이 시작하기',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textTertiary,
+                        )),
+                  ),
+              ],
+            ),
           ),
         ],
       ),

@@ -75,13 +75,13 @@ class StretchPoses {
   StretchPoses._();
 
   static MoveRule? ruleFor(String move) => switch (move) {
-        '목 옆으로 늘이기' => const MoveRule(_neckSide, 12, '°'),
-        '목 뒤로 젖히기' => const MoveRule(_neckBack, 0.02, ''),
-        '팔 양 옆으로 늘리기' => const MoveRule(_armsSide, 0.25, ''),
-        '팔 위로 뻗기' => const MoveRule(_armsUp, 0.3, ''),
-        '몸통 옆으로 늘이기' => const MoveRule(_torsoSide, 7, '°'),
-        '가슴 열기' => const MoveRule(_chestOpen, 1.1, ''),
-        '몸통 비틀기' => const MoveRule(_twist, 0.15, ''),
+        '목 옆으로 늘이기' => const MoveRule(_neckSide, 8, '°'),
+        '목 뒤로 젖히기' => const MoveRule(_neckBack, -0.03, ''),
+        '팔 양 옆으로 늘리기' => const MoveRule(_armsSide, 0.1, ''),
+        '팔 위로 뻗기' => const MoveRule(_armsUp, 0.0, ''),
+        '몸통 옆으로 늘이기' => const MoveRule(_torsoSide, 5, '°'),
+        '가슴 열기' => const MoveRule(_chestOpen, 1.05, ''),
+        '몸통 비틀기' => const MoveRule(_twist, 0.1, ''),
         _ => null,
       };
 
@@ -158,7 +158,7 @@ class StretchPoses {
 class RepCounter {
   RepCounter(
     this.rule, {
-    this.holdFor = const Duration(milliseconds: 500),
+    this.holdFor = const Duration(milliseconds: 300),
     this.releaseRatio = 0.7,
   });
 
@@ -197,7 +197,11 @@ class RepCounter {
       }
       return false;
     }
-    if (v < rule.threshold * releaseRatio) {
+    // 풀림 기준: 기준보다 충분히 아래로 내려가면 (기준이 0 이하인 동작은 0.1 아래).
+    final release = rule.threshold > 0
+        ? rule.threshold * releaseRatio
+        : rule.threshold - 0.1;
+    if (v < release) {
       _holding = false;
       _activeSince = null;
       _counted = false;

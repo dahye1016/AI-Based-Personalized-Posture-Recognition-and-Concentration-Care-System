@@ -115,6 +115,8 @@ class _AppFlowState extends State<AppFlow> {
           ble: _ble!,
           onDone: (_) => _go(_Phase.main),
           onBack: _back,
+          // 센서 없이도 스트레칭(ML Kit)·리포트 등을 볼 수 있게 측정을 건너뛴다.
+          onSkip: () => _go(_Phase.main),
         ),
       _Phase.main => RootNav(ble: _ble),
     };
