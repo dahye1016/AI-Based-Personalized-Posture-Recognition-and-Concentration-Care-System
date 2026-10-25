@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/posture.dart';
@@ -113,9 +114,39 @@ class _HomeScreenState extends State<HomeScreen> {
           _backFps = _backRecvTimes.length.toDouble();
         });
       }
+      if (kDebugMode) _logPressure();
     });
     // 화면에 들어오면 좌석·등받이 센서를 이름(PoseLab-Seat/Back)으로 바로 찾는다.
     WidgetsBinding.instance.addPostFrameCallback((_) => _connectSensors());
+  }
+
+  /// 디버그 빌드에서 1초마다 압력 요약을 터미널에 찍는다 (값 크기 확인용).
+  /// 학습 데이터 기준: 좌석 합 — 앉음 약 12,000~19,000 / 비움 0 근처.
+  void _logPressure() {
+    int sum(List<int>? ch, Iterable<int> idx, [int offset = 0]) {
+      if (ch == null) return 0;
+      var t = 0;
+      for (final i in idx) {
+        final k = i - offset;
+        if (k >= 0 && k < ch.length) t += ch[k];
+      }
+      return t;
+    }
+
+    final seat = _lastFrame?.channels;
+    final back = _lastBackFrame?.channels;
+    final all32 = List<int>.generate(32, (i) => i);
+    const b0 = SensorLayout.backFirstCh;
+    debugPrint('[PRESSURE] '
+        '좌석 합 ${seat == null ? '-' : sum(seat, all32)} '
+        '(엉덩이 ${sum(seat, SensorLayout.hipCh)} 허벅지 ${sum(seat, SensorLayout.thighCh)} '
+        '무릎 ${sum(seat, SensorLayout.kneeCh)} | 좌 ${sum(seat, SensorLayout.leftCh)} '
+        '우 ${sum(seat, SensorLayout.rightCh)}) · '
+        '등받이 합 ${back == null ? '-' : sum(back, all32)} '
+        '(허리 ${sum(back, SensorLayout.backWaistCh, b0)} 등 ${sum(back, SensorLayout.backMidCh, b0)} '
+        '어깨 ${sum(back, SensorLayout.backShoulderCh, b0)}) · '
+        'fps ${_fps.toStringAsFixed(0)}/${_backFps.toStringAsFixed(0)} · '
+        '판정 ${_posture?.label ?? '-'}');
   }
 
   void _onBleStatus() {
