@@ -13,15 +13,11 @@ import '../theme/app_theme.dart';
 ///   · 서버 `posture_logs.posture` 컬럼 값
 /// 이다. 순서를 바꾸거나 중간에 값을 끼워 넣으면 저장된 기록과 어긋난다.
 ///
-/// ## id 7 (거북목) 은 아직 모델에 없다
-/// 지금 번들 모델(assets/model)은 32ch·7클래스(0~6)다. 그래서 [canonical] 은
-/// 7개로 두고, [turtleNeck] 은 enum 값만 먼저 추가했다.
-/// [canonical] 에 넣으면 모델 출력 개수 검사(posture_model.dart)에서 로드가 실패한다.
-///
-/// 8클래스(64ch) 모델로 교체할 때 **아래 3곳을 함께** 8클래스로 바꾼다:
-///   1. 이 파일의 [canonical] — 끝에 [turtleNeck] 추가
-///   2. lib/services/posture_preprocessor.dart 의 `kExpectedLabelOrder` — `turtle_neck` 추가
-///   3. assets/model/norm_stats.json 의 `label_order` / `class_index` (새 모델과 같이 교체)
+/// ## 8클래스 (64ch) 모델
+/// 번들 모델은 assets/model/posture_model_gbt.tflite (출력 8개, id 0~7).
+/// [canonical] 순서는 아래 2곳과 항상 같아야 한다 (어긋나면 모델 로드 단계에서 실패):
+///   1. lib/services/posture_preprocessor.dart 의 `kExpectedLabelOrder`
+///   2. assets/model/norm_stats_gbt.json 의 `label_order` / `class_index`
 ///
 /// ## [id] 가 null 인 값 = 잠정값
 /// 규칙 기반 판정기([PostureClassifier])가 아직 7클래스를 다 못 가려서
@@ -83,7 +79,6 @@ enum PostureClass {
   ),
 
   /// 거북목. 64ch 수집 문자열 `turtle_neck`. 좌우 대칭 자세.
-  /// 지금 번들 모델(7클래스)에는 없어서 [canonical] 에 아직 넣지 않았다.
   turtleNeck(
     id: 7,
     label: '거북목',
@@ -149,8 +144,7 @@ enum PostureClass {
   /// 경고 대상인지. 알림·스트레칭 유도의 기준이 된다.
   final bool isBad;
 
-  /// **현재 번들 모델**의 출력 순서 (id 0~6, 7클래스).
-  /// [turtleNeck](id 7) 은 8클래스 모델 교체 때 함께 넣는다 (파일 상단의 3곳 참고).
+  /// **현재 번들 모델**의 출력 순서 (id 0~7, 8클래스).
   static const List<PostureClass> canonical = [
     notSitting,
     straight,
@@ -159,18 +153,17 @@ enum PostureClass {
     crossLegLeft,
     leanRight,
     leanLeft,
+    turtleNeck,
   ];
 
   /// 알림을 띄울 수 있는 클래스 ([canonical] 기준, 잠정값 제외).
-  /// [turtleNeck] 은 [canonical] 에 들어가기 전까지 여기에도 없다.
   static List<PostureClass> get badClasses =>
       canonical.where((p) => p.isBad).toList();
 
   /// TFLite 출력 인덱스 / 서버 값 -> 클래스.
-  /// [canonical] 에 없는 id 면 [StateError]. ★ 지금은 `fromId(7)`(거북목)도
-  /// 예외를 던진다 — 7클래스 모델은 7 을 내지 않으므로 앱 판정에는 영향 없음.
+  /// [canonical] 에 없는 id 면 [StateError].
   static PostureClass fromId(int id) => canonical.firstWhere(
         (p) => p.id == id,
-        orElse: () => throw StateError('알 수 없는 자세 id: $id (0~6 이어야 함)'),
+        orElse: () => throw StateError('알 수 없는 자세 id: $id (0~7 이어야 함)'),
       );
 }

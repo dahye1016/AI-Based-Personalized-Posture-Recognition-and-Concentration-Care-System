@@ -9,6 +9,7 @@ import '../models/posture_class.dart';
 import '../models/sensor_frame.dart';
 import '../models/sensor_layout.dart';
 import '../services/alert_store.dart';
+import '../services/frame_merger.dart';
 import '../services/posture_model.dart';
 import '../services/sitting_stats.dart';
 import '../theme/app_theme.dart';
@@ -41,11 +42,16 @@ class _HomeScreenState extends State<HomeScreen> {
   double _fps = 0;
   bool _showIndex = false;
 
-  // 등받이 보드 (표시·진단 전용 — 판정은 좌석 32ch 만 쓴다)
+  // 등받이 보드 (표시·진단용 — 판정은 아래 병합 64ch 로 한다)
   StreamSubscription<SensorFrame>? _backSub;
   SensorFrame? _lastBackFrame;
   final List<DateTime> _backRecvTimes = [];
   double _backFps = 0;
+
+  // 판정 입력: 좌석+등받이 병합 64ch (100ms 버킷, 한쪽이 끊기면 출력 없음)
+  late final FrameMerger _merger;
+  StreamSubscription<SensorFrame>? _mergedSub;
+  DateTime? _lastMergedAt;
 
   // ── 온디바이스 자세 판정 (assets/model 의 TFLite) ────────────────
   /// 모델 로드 전에는 null. 로드 실패하면 계속 null 이고 [_modelError] 에 원인이 담긴다.
@@ -84,6 +90,8 @@ class _HomeScreenState extends State<HomeScreen> {
     // BLE 프레임 구독 + fps 감쇠 타이머
     _frameSub = _ble.frames.listen(_onFrame);
     _backSub = _ble.backFrames.listen(_onBackFrame);
+    _merger = FrameMerger(_ble.frames, _ble.backFrames);
+    _mergedSub = _merger.frames.listen(_onMergedFrame);
     _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final now = DateTime.now();
       _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
@@ -98,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  /// 등받이 프레임은 화면 표시용으로만 보관한다. 판정([_onFrame])과 무관.
+  /// 등받이 프레임은 화면 표시용으로만 보관한다. 판정([_onMergedFrame])과 무관.
   void _onBackFrame(SensorFrame f) {
     final now = f.receivedAt;
     _backRecvTimes.add(now);
@@ -126,22 +134,33 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// 좌석 프레임은 히트맵·fps 표시용. 판정은 [_onMergedFrame] 에서 한다.
   void _onFrame(SensorFrame f) {
     final now = f.receivedAt;
     _recvTimes.add(now);
     _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
     if (!mounted) return;
-    final prevAt = _lastFrame?.receivedAt;
-    if (prevAt != null && now.difference(prevAt) > _frameGapReset) _resetBad();
-    final p = _model?.predict(f);
-    if (p != null) SittingStats.instance.record(p, f.receivedAt);
     setState(() {
       _lastFrame = f;
       _fps = _recvTimes.length.toDouble();
+    });
+  }
+
+  /// 병합 64ch 프레임으로 판정한다.
+  void _onMergedFrame(SensorFrame f) {
+    final now = f.receivedAt;
+    if (!mounted) return;
+    final prevAt = _lastMergedAt;
+    _lastMergedAt = now;
+    if (prevAt != null && now.difference(prevAt) > _frameGapReset) _resetBad();
+    final p = _model?.predict(f);
+    if (p != null) SittingStats.instance.record(p, f.receivedAt);
+    // 기준값 수집 중에도 진행도 표시를 위해 다시 그린다.
+    setState(() {
       if (p != null) _posture = p;
     });
-    // predict 가 null 인 프레임(채널 수 불일치·모델 미로드)은 판정이 없으므로
-    // 알림 타이머를 건드리지 않는다.
+    // predict 가 null 인 프레임(채널 수 불일치·모델 미로드·기준값 수집 중)은
+    // 판정이 없으므로 알림 타이머를 건드리지 않는다.
     if (p != null) _trackBad(p, now);
   }
 
@@ -200,6 +219,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _frameSub?.cancel();
     _backSub?.cancel();
+    _mergedSub?.cancel();
+    _merger.dispose();
     _fpsTimer?.cancel();
     _model?.dispose();
     _ble.disconnect();
@@ -271,6 +292,12 @@ class _HomeScreenState extends State<HomeScreen> {
   String get _cardMessage {
     if (_modelError != null) return '모델 로드 실패: $_modelError';
     if (_model == null) return '모델 불러오는 중…';
+    final m = _model!;
+    if (!m.hasBaseline) {
+      // 임시 (작업 39): 캘리브레이션 화면 연동 전까지 앉은 첫 5초를 기준값으로 쓴다.
+      return '기준 자세 측정 중 — 바르게 앉아 주세요 '
+          '(${m.baselineCount}/${m.baselineFrames})';
+    }
     if (_shown == PostureClass.notSitting) return '착석이 감지되지 않아요';
     return _shown.message;
   }

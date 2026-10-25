@@ -10,9 +10,13 @@ import 'screens/splash_screen.dart';
 import 'screens/stretch_screen.dart';
 import 'services/api_service.dart';
 import 'services/ble_service.dart';
+import 'services/gbt_load_probe.dart'; // TODO(작업38): 임시 — 로드 확인 후 삭제
 import 'theme/app_theme.dart';
 
-void main() => runApp(const PostureCareApp());
+void main() {
+  runApp(const PostureCareApp());
+  runGbtLoadProbe(); // TODO(작업38): 임시 — 로드 확인 후 삭제
+}
 
 class PostureCareApp extends StatelessWidget {
   const PostureCareApp({super.key});
