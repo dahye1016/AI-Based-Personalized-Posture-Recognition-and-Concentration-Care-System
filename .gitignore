@@ -54,3 +54,6 @@ sketch_*/
 data/discarded/
 data/augmented/
 .trash/
+
+# 증강 출력 (64ch) — 받는 사람이 직접 실행
+data/augmented_64ch/

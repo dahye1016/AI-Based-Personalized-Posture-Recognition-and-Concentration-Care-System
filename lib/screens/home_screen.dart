@@ -1,67 +1,66 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
+import '../models/posture.dart';
+import '../services/api_service.dart';
+import '../services/ble_service.dart';
 import '../models/posture_alert.dart';
 import '../models/posture_class.dart';
+import '../models/sensor_frame.dart';
+import '../models/sensor_layout.dart';
 import '../services/alert_store.dart';
-import '../services/posture_classifier.dart';
-import '../services/posture_layout.dart';
-import '../services/sensor_source.dart';
+import '../services/posture_model.dart';
 import '../services/sitting_stats.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
+import '../widgets/seat_heatmap.dart';
 import 'alert_history_screen.dart';
 import 'posture_alert_screen.dart';
 import 'settings_screen.dart';
 import 'stretch_screen.dart';
 
-/// 홈 — 실시간 자세. 피그마 「06 실시간 모니터링」.
-///
-/// SensorSource(입구) → PostureClassifier(판정) → 화면.
-/// 데이터 배선은 그대로 두고 화면만 배민 스타일로 교체했다.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.source, this.onOpenReport});
-
-  /// 데이터 입구. 안 넘기면 가짜 소스로 자동 동작.
-  final SensorSource? source;
-
-  /// 하단 탭을 리포트로 넘기는 콜백. RootNav 가 넘겨준다.
-  /// 없으면 정자세 카드의 '오늘 리포트 보기' 버튼을 숨긴다.
-  final VoidCallback? onOpenReport;
+  const HomeScreen({super.key, required this.api});
+  final ApiService api;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late final SensorSource _source;
 
-  /// 위젯이 소스를 직접 만들었을 때만 dispose 한다.
-  /// (주입받은 소스의 수명은 넘겨준 쪽이 관리한다.)
-  bool _ownsSource = false;
+  final BleService _ble = BleService();
+  bool _bleConnected = false;
+  bool _bleConnecting = false;
 
-  StreamSubscription<List<int>>? _sub;
+  // ── 실시간 히트맵 (BLE 전용, 서버 무관) ──────────────────────────
+  StreamSubscription<SensorFrame>? _frameSub;
+  Timer? _fpsTimer;
+  SensorFrame? _lastFrame;
+  final List<DateTime> _recvTimes = []; // 최근 1초 수신 시각 → fps
+  double _fps = 0;
+  bool _showIndex = false;
 
-  PostureResult _result = const PostureResult(PostureClass.waiting);
-  PostureClass? _lastWarned;
+  // ── 온디바이스 자세 판정 (assets/model 의 TFLite) ────────────────
+  /// 모델 로드 전에는 null. 로드 실패하면 계속 null 이고 [_modelError] 에 원인이 담긴다.
+  PostureModel? _model;
 
-  /// 가장 최근 프레임의 채널 값 (히트맵용). 없으면 빈 리스트.
-  List<int> _frame = const [];
+  /// 다수결로 안정화된 최신 판정. 아직 없으면 null (= 대기 중).
+  PostureClass? _posture;
 
-  /// 나쁜 자세가 이어지기 시작한 시각.
-  DateTime? _badSince;
+  /// 모델 로드 실패 원인. null 이면 정상.
+  String? _modelError;
+
+  // ── 나쁜 자세 알림 (기준 시간: [PostureAlertScreen.threshold]) ─────
+  /// 프레임이 이보다 오래 끊겼다 다시 들어오면 지속 시간을 처음부터 잰다.
+  /// (끊긴 동안의 자세는 모르므로 공백을 '유지'로 치지 않는다.)
+  static const Duration _frameGapReset = Duration(milliseconds: 2000);
 
   /// 지금 이어지고 있는 나쁜 자세의 종류. 자세가 바뀌면 시간을 다시 잰다.
   PostureClass? _badPosture;
 
-  /// 지금 상태가 시작된 시각. 정자세·자리 비움의 지속 시간 표시에 쓴다.
-  /// 알림 발화 기준인 [_badSince] 와 달리 모든 상태를 대상으로 잰다.
-  DateTime? _stateSince;
-
-  /// [_stateSince] 를 재고 있는 자세. 바뀌면 시간을 다시 잰다.
-  PostureClass? _stateOf;
+  /// 나쁜 자세가 이어지기 시작한 시각 (프레임 수신 시각 기준).
+  DateTime? _badSince;
 
   /// 이 에피소드에 대해 이미 알림을 띄웠는지 (자세 이름으로 구분).
   PostureClass? _alertedFor;
@@ -72,83 +71,89 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 오늘 몇 번째 알림인지. 보관 한도(4건)와 무관하게 계속 센다.
   int _todayAlerts = 0;
 
-  /// 최근 자세 이력 (타임라인 띠). 최대 24칸.
-  final List<PostureResult> _history = [];
-
   @override
   void initState() {
     super.initState();
-    _ownsSource = widget.source == null;
-    _source = widget.source ?? MockSensorSource();
-    _sub = _source.frames().listen(_onFrame);
+    _loadModel();
+    // BLE 프레임 구독 + fps 감쇠 타이머
+    _frameSub = _ble.frames.listen(_onFrame);
+    _fpsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final now = DateTime.now();
+      _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
+      if (mounted) setState(() => _fps = _recvTimes.length.toDouble());
+    });
   }
 
-  void _onFrame(List<int> frame) {
-    final r = PostureClassifier.classify(frame);
-    // 리포트의 '오늘 착석 / 바른 자세 시간' 집계
-    SittingStats.instance.record(r.posture);
-    if (!mounted) return;
-
-    setState(() {
-      _result = r;
-      _frame = frame;
-      _history.add(r);
-      if (_history.length > 24) _history.removeAt(0);
-
-      // 정자세·자리 비움 배너의 지속 시간용 (경고와 무관하게 항상 잰다).
-      if (_stateOf != r.posture) {
-        _stateOf = r.posture;
-        _stateSince = DateTime.now();
+  /// TFLite 모델과 정규화 값을 읽는다.
+  /// 실패해도 화면은 그대로 뜨고 [_modelError] 만 채워진다 (히트맵은 계속 동작).
+  Future<void> _loadModel() async {
+    try {
+      final m = await PostureModel.load();
+      if (!mounted) {
+        m.dispose();
+        return;
       }
-
-      if (r.status == PostureStatus.warning) {
-        // 자세가 바뀌면 지속 시간을 처음부터 다시 잰다.
-        if (_badPosture != r.posture) {
-          _badPosture = r.posture;
-          _badSince = DateTime.now();
-        }
-      } else {
-        _badPosture = null;
-        _badSince = null;
-      }
-    });
-
-    _maybeAlert(r);
-
-    // 나쁜 자세가 새로 감지된 순간에만 진동 (REQ-F-05)
-    if (r.status == PostureStatus.warning) {
-      if (_lastWarned != r.posture) {
-        _lastWarned = r.posture;
-        HapticFeedback.mediumImpact();
-      }
-    } else {
-      _lastWarned = null;
+      setState(() => _model = m);
+    } catch (e) {
+      debugPrint('[Posture] 모델 로드 실패: $e');
+      if (mounted) setState(() => _modelError = '$e');
     }
   }
 
-  /// 같은 나쁜 자세가 기준 시간([PostureAlertScreen.threshold]) 넘게
-  /// 이어지면 알림 화면을 띄우고
-  /// 기록으로 남긴다. 기록은 최근 4건만 보관된다(AlertStore).
-  void _maybeAlert(PostureResult r) {
-    if (r.status != PostureStatus.warning) {
-      _alertedFor = null;
+  void _onFrame(SensorFrame f) {
+    final now = f.receivedAt;
+    _recvTimes.add(now);
+    _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
+    if (!mounted) return;
+    final prevAt = _lastFrame?.receivedAt;
+    if (prevAt != null && now.difference(prevAt) > _frameGapReset) _resetBad();
+    final p = _model?.predict(f);
+    if (p != null) SittingStats.instance.record(p, f.receivedAt);
+    setState(() {
+      _lastFrame = f;
+      _fps = _recvTimes.length.toDouble();
+      if (p != null) _posture = p;
+    });
+    // predict 가 null 인 프레임(채널 수 불일치·모델 미로드)은 판정이 없으므로
+    // 알림 타이머를 건드리지 않는다.
+    if (p != null) _trackBad(p, now);
+  }
+
+  /// 나쁜 자세 지속 시간을 잰다. 나쁜 자세가 새로 시작되거나 다른 나쁜
+  /// 자세로 바뀌면 처음부터 다시 재고 진동한다 (REQ-F-05).
+  void _trackBad(PostureClass p, DateTime at) {
+    if (!p.isBad) {
+      _resetBad();
       return;
     }
+    if (_badPosture != p) {
+      _badPosture = p;
+      _badSince = at;
+      HapticFeedback.mediumImpact();
+    }
+    _maybeAlert(p, at);
+  }
+
+  void _resetBad() {
+    _badPosture = null;
+    _badSince = null;
+    _alertedFor = null;
+  }
+
+  /// 같은 나쁜 자세가 [PostureAlertScreen.threshold] 넘게 이어지면
+  /// 알림 화면을 띄우고 기록으로 남긴다. 기록은 최근 4건만 보관된다(AlertStore).
+  void _maybeAlert(PostureClass p, DateTime at) {
     final since = _badSince;
     if (since == null) return;
-    if (_alertedFor == r.posture) return; // 이 에피소드는 이미 알렸다
+    if (_alertedFor == p) return; // 이 에피소드는 이미 알렸다
 
-    final held = DateTime.now().difference(since);
+    final held = at.difference(since);
     if (held < PostureAlertScreen.threshold) return;
 
-    _alertedFor = r.posture;
+    _alertedFor = p;
     _todayAlerts++;
 
-    final alert = PostureAlert(
-      posture: r.posture,
-      heldFor: held,
-      at: DateTime.now(),
-    );
+    final alert = PostureAlert(posture: p, heldFor: held, at: at);
     AlertStore.instance.add(alert);
 
     if (!mounted || _alertOpen) return;
@@ -167,51 +172,65 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    _sub?.cancel();
-    if (_ownsSource) _source.dispose();
+    _frameSub?.cancel();
+    _fpsTimer?.cancel();
+    _model?.dispose();
+    _ble.disconnect();
     super.dispose();
+  }
+
+  Future<void> _toggleBle() async {
+    print('버튼 눌림!');
+    if (_bleConnected) {
+      await _ble.disconnect();
+      // 다시 붙었을 때 끊기기 직전 판정이 다수결에 남지 않게 한다.
+      _model?.reset();
+      _resetBad(); // 끊긴 동안의 자세는 모르므로 다시 붙으면 처음부터 잰다.
+      setState(() {
+        _bleConnected = false;
+        _posture = null;
+      });
+    } else {
+      setState(() => _bleConnecting = true);
+      final ok = await _ble.connect();
+      setState(() {
+        _bleConnected = ok;
+        _bleConnecting = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ok ? '✅ ESP32 연결됨!' : '❌ 연결 실패. 다시 시도해주세요.'),
+            backgroundColor: ok ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   // ── 표시용 계산 ────────────────────────────────────────────
 
-  bool get _isBad => _result.status == PostureStatus.warning;
+  /// 화면에 쓰는 판정. 아직 없으면 waiting(연결 중) 으로 본다.
+  PostureClass get _shown => _posture ?? PostureClass.waiting;
 
-  String get _heldLabel {
-    final since = _badSince;
-    if (since == null) return '';
-    final d = DateTime.now().difference(since);
-    if (d.inMinutes >= 1) return '${d.inMinutes}분 ${d.inSeconds % 60}초째 · ';
-    return '${d.inSeconds}초째 · ';
-  }
-
-  Color _postureColor(PostureClass posture) => posture.color;
-
-  /// 지금 상태가 이어진 시간을 'N분' / 'N초' 로. 1분 미만이면 초로 보여준다.
-  String get _stateHeld {
-    final since = _stateSince;
-    if (since == null) return '0초';
-    final d = DateTime.now().difference(since);
-    if (d.inMinutes >= 1) return '${d.inMinutes}분';
-    return '${d.inSeconds}초';
-  }
+  bool get _isBad => _posture?.isBad ?? false;
 
   /// 상태별 상단 배너. 연결 중(waiting)에는 배너를 띄우지 않는다.
   Widget? get _banner {
     if (_isBad) {
       return _WarnBanner(
-        title: '${_result.posture.label} 자세가 감지됐어요!',
-        body: '$_heldLabel${_result.message}',
+        title: '${_shown.label} 자세가 감지됐어요!',
+        body: _shown.message,
       );
     }
-    switch (_result.posture) {
+    switch (_shown) {
       case PostureClass.straight:
-        return _GoodBanner(
+        return const _GoodBanner(
           title: '자세가 아주 좋아요!',
-          body: '$_stateHeld째 바른 자세를 유지하고 있어요',
+          body: '바른 자세를 유지하고 있어요',
         );
       case PostureClass.notSitting:
-        // 자리 비움은 경고 배너 모양만 빌려 쓴다. 알림·진동은 띄우지 않는다
-        // (notSitting 은 isBad 가 아니라 status 가 warning 이 되지 않는다).
+        // 자리 비움은 경고 배너 모양만 빌려 쓴다.
         return const _WarnBanner(
           title: '자리를 비웠어요',
           body: '돌아와서 앉으면 다시 측정을 시작해요',
@@ -221,14 +240,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// 자세 카드 부제.
-  String get _cardMessage => _result.posture == PostureClass.notSitting
-      ? '$_stateHeld째 착석이 감지되지 않아요'
-      : _result.message;
+  /// 자세 카드 부제. 모델 상태가 정상이 아니면 그 원인을 대신 보여준다.
+  String get _cardMessage {
+    if (_modelError != null) return '모델 로드 실패: $_modelError';
+    if (_model == null) return '모델 불러오는 중…';
+    if (_shown == PostureClass.notSitting) return '착석이 감지되지 않아요';
+    return _shown.message;
+  }
 
-  /// 자세 카드 안의 행동 버튼. 연결 중에는 버튼을 두지 않는다.
+  /// 자세 카드 안의 행동 버튼. 나쁜 자세·자리 비움일 때만 둔다.
   Widget? get _cardButton {
-    if (_isBad || _result.posture == PostureClass.notSitting) {
+    if (_isBad || _shown == PostureClass.notSitting) {
       return _CardButton(
         label: '스트레칭 하러 가기',
         onTap: () => Navigator.of(context).push(
@@ -236,91 +258,48 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-    if (_result.posture == PostureClass.straight) {
-      final open = widget.onOpenReport;
-      if (open == null) return null;
-      return _CardButton(label: '오늘 리포트 보기', onTap: open);
-    }
     return null;
   }
 
-  /// 현재 프레임에서 주어진 채널들의 합.
-  double _sum(List<int> idx) {
-    var s = 0.0;
-    for (final i in idx) {
-      if (i < _frame.length) s += _frame[i];
+  /// 헤더의 BLE pill. 탭하면 연결/해제. 스캔 중에는 스피너.
+  /// 수신 중이면 LIVE, 연결됐지만 데이터가 없으면 경고색, 끊김이면 회색.
+  Widget get _blePill {
+    if (_bleConnecting) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 10),
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
     }
-    return s;
+    final BmPill pill;
+    if (_fps > 0) {
+      pill = const BmPill(label: 'LIVE', dot: true);
+    } else if (_bleConnected) {
+      pill = const BmPill(
+        label: '데이터 없음',
+        color: AppColors.warnIcon,
+        bg: AppColors.warnBg,
+        dot: true,
+      );
+    } else {
+      pill = const BmPill(
+        label: '센서 연결',
+        color: AppColors.textTertiary,
+        bg: AppColors.surface,
+      );
+    }
+    return Tooltip(
+      message: _bleConnected ? 'BLE 연결됨 (탭해서 해제)' : 'ESP32 연결',
+      child: GestureDetector(
+        onTap: _toggleBle,
+        behavior: HitTestBehavior.opaque,
+        child: pill,
+      ),
+    );
   }
-
-  /// 압력 분포 카드의 오른쪽 상태 요약. 구역 구분은 [PostureLayout] 을 쓴다.
-  String get _pressureSummary {
-    if (_result.posture == PostureClass.waiting ||
-        _frame.length < PostureLayout.channels) {
-      return '신호 대기 중';
-    }
-    if (_result.posture == PostureClass.notSitting) {
-      return '압력이 감지되지 않아요';
-    }
-
-    final total = _sum(PostureLayout.all);
-    if (total <= 0) return '압력이 감지되지 않아요';
-
-    final l = _sum(PostureLayout.left);
-    final r = _sum(PostureLayout.right);
-    final lr = l + r;
-
-    switch (_result.posture) {
-      case PostureClass.straight:
-        if (lr <= 0) return '압력이 감지되지 않아요';
-        final balance = 100 - ((l - r).abs() / lr * 100);
-        return '좌우 균형 ${balance.round()}%';
-      case PostureClass.leanForward:
-        return '무릎 쪽 하중 ${(_sum(PostureLayout.knee) / total * 100).round()}%';
-      case PostureClass.leanBack:
-        return '엉덩이 쪽 하중 ${(_sum(PostureLayout.hip) / total * 100).round()}%';
-      default:
-        // 다리 꼬기(잠정값)와 좌우 기울임 — 좌우 비중으로 보여준다.
-        if (lr <= 0) return '압력이 감지되지 않아요';
-        return '좌 ${(l / lr * 100).round()}% · 우 ${(r / lr * 100).round()}%';
-    }
-  }
-
-  /// 방석 32채널을 물리 배치 그대로 0~1 로 정규화한 값.
-  /// 프레임이 없으면 전부 0.
-  ///
-  /// 이전에는 32채널을 4×4=16칸으로 2개씩 뭉쳐 그렸는데, 그리드 경계가
-  /// 실제 행 경계와 어긋나 한 행에 서로 다른 부위가 섞이고 좌우 경계도
-  /// 밀려 있었다. 이제 [PostureLayout.rows] 를 그대로 그리므로 화면의
-  /// 위아래·좌우가 몸의 위아래·좌우와 일치한다.
-  /// 행 구성은 실측으로 검증된 10 / 14 / 8 이다.
-  List<List<double>> get _heatGrid {
-    final grid = [
-      for (final row in PostureLayout.rows) List<double>.filled(row.length, 0),
-    ];
-    if (_frame.length < PostureLayout.channels) return grid;
-
-    var maxV = 0;
-    for (final i in PostureLayout.all) {
-      if (_frame[i] > maxV) maxV = _frame[i];
-    }
-    if (maxV <= 0) return grid;
-
-    for (var r = 0; r < PostureLayout.rows.length; r++) {
-      final row = PostureLayout.rows[r];
-      for (var c = 0; c < row.length; c++) {
-        grid[r][c] = _frame[row[c]] / maxV;
-      }
-    }
-    return grid;
-  }
-
-  /// 등받이(허리) 매트 그리드. 좌석과 같은 모양(10/14/8)이다.
-  /// 등받이 데이터 수신이 붙기 전까지는 전부 0(빈 칸)으로 그린다.
-  List<List<double>> get _backrestGrid => [
-        for (final row in PostureLayout.rows)
-          List<double>.filled(row.length, 0),
-      ];
 
   @override
   Widget build(BuildContext context) {
@@ -337,7 +316,7 @@ class _HomeScreenState extends State<HomeScreen> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const BmPill(label: 'LIVE', dot: true),
+                  _blePill,
                   IconButton(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute(
@@ -389,20 +368,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Row(
                       children: [
-                        _PostureIcon(
-                          color: _postureColor(_result.posture),
-                          bad: _isBad,
-                        ),
+                        _PostureIcon(color: _shown.color, bad: _isBad),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(_result.posture.label,
+                              Text(_shown.label,
                                   style:
                                       AppText.display.copyWith(fontSize: 26)),
                               const SizedBox(height: 4),
                               Text(_cardMessage,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
                                   style: AppText.caption.copyWith(height: 1.4)),
                             ],
                           ),
@@ -430,19 +408,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       trailing: _pressureSummary,
                     ),
                     const SizedBox(height: 12),
-                    // 등받이(허리) 매트 — 아직 BLE 로 등받이 데이터가 안 들어와서
-                    // 좌석과 같은 모양의 빈 그리드로 자리만 잡아둔다.
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('등받이 · 위 어깨 → 아래 허리 (센서 연결 대기)',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textTertiary,
-                          )),
-                    ),
-                    const SizedBox(height: 8),
-                    _HeatGrid(grid: _backrestGrid),
-                    const SizedBox(height: 14),
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text('좌석 · 위 엉덩이 → 아래 무릎',
@@ -452,27 +417,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           )),
                     ),
                     const SizedBox(height: 8),
-                    _HeatGrid(grid: _heatGrid),
-                  ],
-                ),
-              ),
-            ),
-
-            // ── 최근 자세 타임라인 ─────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.screen, 0, AppSpacing.screen, 0),
-              child: BmSoftCard(
-                child: Column(
-                  children: [
-                    BmCardCaption(
-                      title: '최근 30분',
-                      trailing: '${PostureClass.straight.label} · '
-                          '${PostureClass.leanForward.label} · '
-                          '${PostureClass.crossLegUnknown.label}',
-                    ),
+                    // 채널 번호를 켜면 좌표계 검증용 SeatHeatmap 으로 바꿔 그린다.
+                    if (_showIndex)
+                      SeatHeatmap(
+                        channels: _lastFrame?.channels ?? const [],
+                        showIndex: true,
+                      )
+                    else
+                      _HeatGrid(grid: _heatGrid),
                     const SizedBox(height: 10),
-                    BmBand(segments: _timelineSegments()),
+                    _buildDiagnostics(),
                   ],
                 ),
               ),
@@ -486,28 +440,200 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  List<MapEntry<int, Color>> _timelineSegments() {
-    if (_history.isEmpty) {
-      return const [MapEntry(1, AppColors.border)];
+  /// 압력 카드 하단 진단 줄 — frameNo·fps 와 채널 번호 토글.
+  Widget _buildDiagnostics() {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            'frameNo ${_lastFrame?.frameNo ?? '—'} · fps ${_fps.toStringAsFixed(0)}',
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textTertiary,
+            ),
+          ),
+        ),
+        const Text('채널 번호',
+            style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+        Switch(
+          value: _showIndex,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onChanged: (v) => setState(() => _showIndex = v),
+        ),
+      ],
+    );
+  }
+
+  // ── 아로 디자인 이식용 헬퍼 (feat/aro #16) ─────────────────────────
+  // PostureLayout 대신 SensorLayout 으로 조립한다.
+
+  /// 물리 행 순서 — 뒤(엉덩이) → 가운데(허벅지) → 앞(무릎). 10 / 14 / 8.
+  static const List<List<int>> _rows = [
+    SensorLayout.hipCh,
+    SensorLayout.thighCh,
+    SensorLayout.kneeCh,
+  ];
+
+  /// 전체 채널. 총압·정규화는 이걸 쓴다.
+  static const List<int> _all = [
+    ...SensorLayout.hipCh,
+    ...SensorLayout.thighCh,
+    ...SensorLayout.kneeCh,
+  ];
+
+  /// 현재 프레임의 채널값. 프레임이 없으면 빈 리스트.
+  List<int> get _frame => _lastFrame?.channels ?? const [];
+
+  /// 현재 프레임에서 주어진 채널들의 합.
+  double _sum(List<int> idx) {
+    var s = 0.0;
+    for (final i in idx) {
+      if (i < _frame.length) s += _frame[i];
     }
-    // 같은 자세가 이어지면 한 칸으로 합친다.
-    final out = <MapEntry<int, Color>>[];
-    var runColor = _postureColor(_history.first.posture);
-    var runLen = 0;
-    for (final r in _history) {
-      final c = _postureColor(r.posture);
-      if (c == runColor) {
-        runLen++;
-      } else {
-        out.add(MapEntry(runLen, runColor));
-        runColor = c;
-        runLen = 1;
+    return s;
+  }
+
+  /// 압력 분포 카드의 오른쪽 상태 요약. 구역 구분은 [SensorLayout] 을 쓴다.
+  String get _pressureSummary {
+    final posture = _posture ?? PostureClass.waiting;
+    if (posture == PostureClass.waiting ||
+        _frame.length < SensorLayout.nChannels) {
+      return '신호 대기 중';
+    }
+    if (posture == PostureClass.notSitting) {
+      return '압력이 감지되지 않아요';
+    }
+
+    final total = _sum(_all);
+    if (total <= 0) return '압력이 감지되지 않아요';
+
+    final l = _sum(SensorLayout.leftCh);
+    final r = _sum(SensorLayout.rightCh);
+    final lr = l + r;
+
+    switch (posture) {
+      case PostureClass.straight:
+        if (lr <= 0) return '압력이 감지되지 않아요';
+        final balance = 100 - ((l - r).abs() / lr * 100);
+        return '좌우 균형 ${balance.round()}%';
+      case PostureClass.leanForward:
+        return '무릎 쪽 하중 ${(_sum(SensorLayout.kneeCh) / total * 100).round()}%';
+      case PostureClass.leanBack:
+        return '엉덩이 쪽 하중 ${(_sum(SensorLayout.hipCh) / total * 100).round()}%';
+      default:
+        // 다리 꼬기(잠정값)와 좌우 기울임 — 좌우 비중으로 보여준다.
+        if (lr <= 0) return '압력이 감지되지 않아요';
+        return '좌 ${(l / lr * 100).round()}% · 우 ${(r / lr * 100).round()}%';
+    }
+  }
+
+  /// 방석 32채널을 물리 배치 그대로 0~1 로 정규화한 값.
+  /// 프레임이 없으면 전부 0. 행 구성은 [_rows] (10 / 14 / 8).
+  List<List<double>> get _heatGrid {
+    final grid = [
+      for (final row in _rows) List<double>.filled(row.length, 0),
+    ];
+    if (_frame.length < SensorLayout.nChannels) return grid;
+
+    var maxV = 0;
+    for (final i in _all) {
+      if (_frame[i] > maxV) maxV = _frame[i];
+    }
+    if (maxV <= 0) return grid;
+
+    for (var r = 0; r < _rows.length; r++) {
+      final row = _rows[r];
+      for (var c = 0; c < row.length; c++) {
+        grid[r][c] = _frame[row[c]] / maxV;
       }
     }
-    out.add(MapEntry(runLen, runColor));
-    return out;
+    return grid;
   }
 }
+
+class _PostureCard extends StatelessWidget {
+  const _PostureCard({required this.data});
+  final CurrentPosture? data;
+
+  @override
+  Widget build(BuildContext context) {
+    if (data == null) {
+      return const SizedBox(
+        height: 320,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final style = PostureStyle.of(data!.posture);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+      decoration: BoxDecoration(
+        color: style.color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: style.color.withOpacity(0.4), width: 2),
+      ),
+      child: Column(
+        children: [
+          Icon(style.icon, size: 96, color: style.color),
+          const SizedBox(height: 20),
+          Text(
+            data!.posture,
+            style: TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.bold,
+              color: style.color,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            data!.message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, height: 1.4),
+          ),
+          if (data!.action != null) ...[
+            const SizedBox(height: 16),
+            Chip(
+              avatar: Icon(Icons.vibration, size: 18, color: style.color),
+              label: Text(data!.action!),
+              backgroundColor: style.color.withOpacity(0.15),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.wifi_off, color: Colors.red),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '서버에 연결할 수 없어요.\n$message',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 아로 디자인 부속 위젯 (feat/aro #16 원본 그대로) ─────────────────
 
 /// 주황 경고 배너.
 class _WarnBanner extends StatelessWidget {
@@ -703,7 +829,7 @@ class _PostureIcon extends StatelessWidget {
   }
 }
 
-/// 압력 히트맵. 행 구성은 [PostureLayout.rows] 를 그대로 따른다.
+/// 압력 히트맵. 행 구성은 [_HomeScreenState._rows] 를 그대로 따른다.
 /// 행마다 셀 개수가 달라도(10/14/8) 각 행이 카드 폭을 꽉 채운다.
 class _HeatGrid extends StatelessWidget {
   const _HeatGrid({required this.grid});
@@ -745,3 +871,215 @@ class _HeatGrid extends StatelessWidget {
     );
   }
 }
+
+
+
+/* import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../config.dart';
+import '../models/posture.dart';
+import '../services/api_service.dart';
+
+/// 실시간 자세 화면.
+/// - 주기적으로 /current-posture 폴링
+/// - 나쁜 자세가 새로 감지되면 진동 + 스낵바로 교정 알림
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, required this.api});
+  final ApiService api;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  Timer? _timer;
+  CurrentPosture? _data;
+  String? _error;
+  String? _lastAlertedPosture; // 같은 나쁜 자세 반복 알림 방지
+
+  @override
+  void initState() {
+    super.initState();
+    _poll(); // 즉시 1회
+    _timer = Timer.periodic(AppConfig.pollInterval, (_) => _poll());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _poll() async {
+    try {
+      final data = await widget.api.fetchCurrentPosture();
+      if (!mounted) return;
+      setState(() {
+        _data = data;
+        _error = null;
+      });
+      _maybeAlert(data);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    }
+  }
+
+  /// 나쁜 자세가 "새로" 감지된 순간에만 진동 + 알림
+  void _maybeAlert(CurrentPosture data) {
+    if (data.isBad) {
+      if (_lastAlertedPosture != data.posture) {
+        _lastAlertedPosture = data.posture;
+        HapticFeedback.heavyImpact(); // 진동 알림
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              SnackBar(
+                content: Text(data.message),
+                backgroundColor: PostureStyle.of(data.posture).color,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+        }
+      }
+    } else {
+      _lastAlertedPosture = null; // 바른자세로 돌아오면 리셋
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('실시간 자세'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: '새로고침',
+            onPressed: _poll,
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _poll,
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            const SizedBox(height: 12),
+            if (_error != null) _ErrorBanner(message: _error!),
+            _PostureCard(data: _data),
+            const SizedBox(height: 24),
+            _StatusHint(data: _data),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 큰 자세 표시 카드
+class _PostureCard extends StatelessWidget {
+  const _PostureCard({required this.data});
+  final CurrentPosture? data;
+
+  @override
+  Widget build(BuildContext context) {
+    if (data == null) {
+      return const SizedBox(
+        height: 320,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final style = PostureStyle.of(data!.posture);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+      decoration: BoxDecoration(
+        color: style.color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: style.color.withOpacity(0.4), width: 2),
+      ),
+      child: Column(
+        children: [
+          Icon(style.icon, size: 96, color: style.color),
+          const SizedBox(height: 20),
+          Text(
+            data!.posture,
+            style: TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.bold,
+              color: style.color,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            data!.message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, height: 1.4),
+          ),
+          if (data!.action != null) ...[
+            const SizedBox(height: 16),
+            Chip(
+              avatar: Icon(Icons.vibration, size: 18, color: style.color),
+              label: Text(data!.action!),
+              backgroundColor: style.color.withOpacity(0.15),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusHint extends StatelessWidget {
+  const _StatusHint({required this.data});
+  final CurrentPosture? data;
+
+  @override
+  Widget build(BuildContext context) {
+    final ts = data?.timestamp;
+    final timeText = ts == null
+        ? '—'
+        : '${ts.hour.toString().padLeft(2, '0')}:'
+            '${ts.minute.toString().padLeft(2, '0')}:'
+            '${ts.second.toString().padLeft(2, '0')}';
+    return Center(
+      child: Text(
+        '마지막 갱신 $timeText · ${AppConfig.pollInterval.inSeconds}초마다 자동 확인',
+        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+      ),
+    );
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.wifi_off, color: Colors.red),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '서버에 연결할 수 없어요.\n$message',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+ */
