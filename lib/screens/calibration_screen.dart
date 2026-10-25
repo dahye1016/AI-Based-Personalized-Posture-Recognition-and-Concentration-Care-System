@@ -535,7 +535,7 @@ class _MeasuringView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-            '$title · CH$first~${first + 31}${hasData ? '' : ' (신호 대기)'}',
+            hasData ? title : '$title (신호 대기)',
             style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
@@ -642,7 +642,7 @@ class _MeasuringView extends StatelessWidget {
                 children: [
                   const BmCardCaption(
                     title: '실시간 압력',
-                    trailing: '64 ch · 등받이 + 좌석',
+                    trailing: '등받이 + 좌석',
                   ),
                   const SizedBox(height: 12),
                   _matGrid('등받이', backLevels, 32),
@@ -685,8 +685,6 @@ class _ChannelCell extends StatelessWidget {
             borderRadius: BorderRadius.circular(5),
           ),
         ),
-        const SizedBox(height: 2),
-        Text('$index', style: AppText.caption.copyWith(fontSize: 8)),
       ],
     );
   }
