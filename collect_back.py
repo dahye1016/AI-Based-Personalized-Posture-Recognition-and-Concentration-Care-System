@@ -27,14 +27,14 @@
   timestamp,person,trial,posture,seat_0..seat_31,back_0..back_31
   → ml/prepare_chair_data.py 가 이 형식을 그대로 읽는다.
 
-자세 (앱 순서 0~7과 동일, posture_names.py)
+자세 (앱 순서 0~6과 동일, posture_names.py)
   not_sitting, sitting_straight, lean_forward, cross_leg_right,
-  cross_leg_left, lean_right, lean_left, turtle_neck
+  cross_leg_left, lean_right, lean_left
 
 사용 예
   python collect_back.py ports
   python collect_back.py tap --seat-port COM3 --back-port COM4
-  python collect_back.py record --posture turtle_neck --person aro --trial 1 --seat-port COM3 --back-port COM4
+  python collect_back.py record --posture sitting_straight --person aro --trial 1 --seat-port COM3 --back-port COM4
   python collect_back.py menu --person aro --repeat 3 --seat-port COM3 --back-port COM4
   python collect_back.py menu --person aro --source sim        # 하드웨어 없이 동작 확인
 """
@@ -55,10 +55,9 @@ POSTURES = [
     "cross_leg_left",    # 4
     "lean_right",        # 5
     "lean_left",         # 6
-    "turtle_neck",       # 7
 ]
 
-# 참가자에게 읽어 줄 자세 안내 (거북목/앞으로 숙이기는 헷갈리기 쉬움)
+# 참가자에게 읽어 줄 자세 안내
 GUIDE = {
     "not_sitting": "의자에서 완전히 일어나 있기 (방석·등받이 모두 닿지 않게)",
     "sitting_straight": "엉덩이를 깊이 넣고 등을 등받이에 편하게 붙인 바른 자세",
@@ -67,7 +66,6 @@ GUIDE = {
     "cross_leg_left": "왼다리를 오른다리 위로 꼬고, 등은 평소처럼",
     "lean_right": "상체를 오른쪽으로 기대기 (몸이 오른쪽으로 쏠리게)",
     "lean_left": "상체를 왼쪽으로 기대기 (몸이 왼쪽으로 쏠리게)",
-    "turtle_neck": "등은 등받이에 댄 채, 어깨 부분은 등받이에서 띄우고 목·머리를 앞으로 내밀기",
 }
 
 N_SEAT = 32
@@ -80,7 +78,6 @@ HEADER = (
 
 # 등받이 줄 구분 — 팀 저장소 sensor_layout.dart 와 같은 10/14/8 구조 (back_i = 64ch 프레임의 ch32+i)
 #   허리 줄 back_0~9 (ch32~41) / 중간 줄 back_10~23 (ch42~55) / 어깨 줄 back_24~31 (ch56~63)
-# 2026-10-18 데이터로 확인: 거북목은 어깨 줄이 거의 0 이고 허리·중간 줄은 닿는다.
 BACK_WAIST = range(0, 10)
 BACK_MID = range(10, 24)
 BACK_SHOULDER = range(24, 32)
@@ -312,11 +309,6 @@ def check_recording(posture, rows):
             warns.append("방석 값이 전부 0 — 방석 보드가 연결/수신되고 있는지 확인")
         if posture == "lean_forward" and back_mean > TOUCH_THRESHOLD:
             warns.append("앞으로 숙이기인데 등받이 값이 큼 — 등이 등받이에 닿았을 수 있음")
-        if posture == "turtle_neck":
-            if torso <= TOUCH_THRESHOLD:
-                warns.append("거북목인데 등받이(허리·중간) 값이 작음 — 등이 등받이에 닿지 않은 듯 (앞으로 숙이기와 구분 안 됨)")
-            elif shoulder > TOUCH_THRESHOLD:
-                warns.append("거북목인데 어깨 줄 값이 큼 — 어깨가 등받이에 닿았을 수 있음 (어깨를 띄우세요)")
         if posture == "sitting_straight" and back_mean <= TOUCH_THRESHOLD:
             warns.append("정자세인데 등받이 값이 작음 — 등받이 센서 수신 확인")
     for w in warns:

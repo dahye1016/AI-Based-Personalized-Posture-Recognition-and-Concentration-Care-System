@@ -1,18 +1,18 @@
 """
-train_posture_gbt.py — 캘리브레이션 + 두 부스팅 모델(모양/차이) 합치기, 규칙 없음 (8자세, 64ch)
+train_posture_gbt.py — 캘리브레이션 + 두 부스팅 모델(모양/차이) 합치기, 규칙 없음 (7자세, 64ch)
 
 train_posture_calib.py 와 입력·출력·특징이 같다. 분류기만 신경망 대신 부스팅(HistGradientBoosting)이다.
-  (같은 데이터·특징에서 신경망은 처음 보는 사람의 거북목을 못 맞혔고, 부스팅은 맞혔다)
+  (같은 데이터·특징에서 부스팅이 처음 보는 사람에게 더 잘 맞았다)
 
 앱 입력: [1, 128] float32 = 지금 프레임 원시값 ch0~63 + 캘리브레이션 기준값(정자세 5초 평균) ch0~63
-출력: [1, 8] 자세별 확률 (argmax = label_order 인덱스). 규칙 없음.
+출력: [1, 7] 자세별 확률 (argmax = label_order 인덱스). 규칙 없음.
 
 TFLite 변환: 부스팅의 나무들을 행렬 계산으로 옮긴다 (GEMM 방식)
   나무마다  T = (특징[선택] <= 기준값)  ->  leaf = (T @ C == D)  ->  leaf @ 값
   C: 내부노드 x 잎 (왼쪽으로 가면 +1, 오른쪽 -1), D: 그 잎까지 왼쪽으로 간 횟수.
   변환 뒤 sklearn 예측과 TFLite 예측이 같은지 검사한다.
 
-학습 데이터: 팀 자세 정의(gen_dummy_spec.py)에 맞는 실측 + 더미 8자세 + 좌우 반전
+학습 데이터: 팀 자세 정의(gen_dummy_spec.py)에 맞는 실측 + 더미 + 좌우 반전
 평가: 사람 단위 LOPO (실측만, 캘리브레이션 5초 제외), '정의에 맞는 녹화' / '전체 녹화'
 
 실행 (저장소 루트에서):  python ml/train_posture_gbt.py
@@ -43,12 +43,9 @@ OUT_TFLITE = ROOT / "ml" / "posture_model_gbt.tflite"
 OUT_PKL = ROOT / "ml" / "posture_model_gbt.pkl"
 OUT_JSON = ROOT / "ml" / "norm_stats_gbt.json"
 RUN_DIR = ROOT / "ml" / "runs" / "gbt"
-CH, L, N = C.CH, C.L, C.N           # N = 8 (평가용 혼동행렬은 8x8 로 두고 뺀 자세 칸은 비워 둔다)
-# 2026-10-25: 거북목은 학습·평가·출력에서 뺀다 (7자세). 거북목이 마지막 번호(p7)라 나머지 번호 p0~p6 은 그대로다.
-DROP = ["turtle_neck"]
-LABELS = [p for p in T.LABEL_ORDER if p not in DROP]
-assert LABELS == T.LABEL_ORDER[:len(LABELS)], "뺀 자세가 마지막 번호가 아니면 번호가 밀린다"
-N_OUT = len(LABELS)                 # 모델 출력 개수 (7)
+CH, L, N = C.CH, C.L, C.N           # N = 자세 개수 (posture_names, 7)
+LABELS = list(T.LABEL_ORDER)
+N_OUT = N                           # 모델 출력 개수
 W_DIFF = 0.5
 EVERY = 3            # 학습 데이터 3행마다 1개 (연속 프레임은 거의 같다)
 GBT = dict(max_iter=200, learning_rate=0.1, class_weight="balanced", random_state=42)
@@ -57,7 +54,7 @@ FEAT = C.Features()
 
 
 N_LR = 5   # Features 마지막 5개 = 좌우 비율·무릎 균형. 차이 모델에도 '차이'가 아니라 지금 값 그대로 넣는다
-           # (양쪽 무릎이 지금 다 닿았는지가 거북목/다리 꼬기를 가르는 정보라서)
+           # (양쪽 무릎이 지금 다 닿았는지가 다리 꼬기를 가르는 정보라서)
 
 
 def features(X, B):
@@ -172,10 +169,8 @@ def main():
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     T.ONLY_PASSING["on"] = False
     df = T.load_raw()
-    df = df[~df["posture"].isin(DROP)].reset_index(drop=True)          # 뺀 자세는 학습·평가 모두 제외
     dm = T.load_dummy(C.DUMMY_GZ, C.DUMMY_EVERY)
-    dm = dm[~dm["posture"].isin(DROP)].reset_index(drop=True)
-    print(f"뺀 자세: {DROP} -> 출력 {N_OUT}자세 {LABELS}")
+    print(f"출력 {N_OUT}자세 {LABELS}")
     cal, used = C.real_calibration()
     cdm = C.dummy_calibration(dm)
     persons = sorted(df["person"].unique())
@@ -275,14 +270,13 @@ def main():
         "class_index": {p: L[p] for p in LABELS},
         "label_names": {f"p{i}": T.KOREAN[i] for i in range(N_OUT)},
         "num_classes": N_OUT,
-        "dropped_postures": DROP,
         "model_io": {
             "tflite_file": OUT_TFLITE.name,
             "input_shape": in_shape,
             "input_dtype": "float32",
             "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63]. 정규화하지 말 것",
             "output_shape": out_shape,
-            "output": f"{N_OUT}자세 확률 (argmax 가 label_order 인덱스). 규칙 없음. 거북목 없음",
+            "output": f"{N_OUT}자세 확률 (argmax 가 label_order 인덱스). 규칙 없음",
             "sklearn_vs_tflite_agreement": agree,
         },
         "raw_input": True,

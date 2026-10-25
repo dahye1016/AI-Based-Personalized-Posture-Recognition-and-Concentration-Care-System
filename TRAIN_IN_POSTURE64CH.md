@@ -18,7 +18,7 @@ posture 데이터로 바꿔서 학습시키는 게 이번 작업이에요.
 | p코드 | 이름 | 우리 posture |
 |---|---|---|
 | p1 | 정자세 | sitting_straight |
-| p2 | 거북목 | lean_forward |
+| p2 | 앞으로 숙이기 | lean_forward |
 | p3 | 오른다리꼬기 | cross_leg_right |
 | p4 | 왼다리꼬기 | cross_leg_left |
 | p5 | 오른쪽기대기 | lean_right |
@@ -26,7 +26,7 @@ posture 데이터로 바꿔서 학습시키는 게 이번 작업이에요.
 | p7 | 앉지않음 | not_sitting |
 | p8 | 등받이 밀착 자세 | **없음** — 등받이 실측 센서 없이는 수집 불가라 이번엔 제외 |
 
-p2(거북목)를 lean_forward에 매핑한 건 제 판단이에요. 다르게 생각하시면
+p2(앞으로 숙이기)를 lean_forward에 매핑한 건 제 판단이에요. 다르게 생각하시면
 `--label-map "lean_forward=p2"` 처럼 바꿀 수 있어요.
 
 ⚠️ **num_classes가 8 → 7로 줄어듭니다.** `server_64ch.py`가 자세 이름을

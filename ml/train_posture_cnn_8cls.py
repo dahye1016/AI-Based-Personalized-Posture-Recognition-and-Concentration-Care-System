@@ -1,11 +1,12 @@
 """
-train_posture_cnn_8cls.py — 64ch 실측(data/raw_64ch) 8클래스 자세 분류 1D-CNN 학습
+train_posture_cnn_8cls.py — 64ch 실측(data/raw_64ch) 자세 분류 1D-CNN 학습 + 공용 데이터 함수
+(파일 이름은 예전 그대로. 자세는 posture_names 의 7종을 따른다. 앱용 모델은 ml/train_posture_gbt.py)
 
-ml/train_posture_cnn.py(32ch 7클래스)와 같은 구조를 64ch·8클래스로 넓힌 것.
+ml/train_posture_cnn.py(32ch)와 같은 구조를 64ch 로 넓힌 것.
 
 라벨 순서는 posture_names.POSTURE_ORDER 를 그대로 쓴다 (앱 posture_class.dart 와 동일).
   0 not_sitting / 1 sitting_straight / 2 lean_forward / 3 cross_leg_right
-  4 cross_leg_left / 5 lean_right / 6 lean_left / 7 turtle_neck
+  4 cross_leg_left / 5 lean_right / 6 lean_left
 
 입력은 프레임 하나: ch0~31(좌석) + ch32~63(등받이)을 정규화한 64개. 0 패딩 없음.
 (채널 순서는 ml/collect_data.py --port-back 이 저장한 순서 그대로)
@@ -26,9 +27,7 @@ json 하나를 앱과 서버가 같이 쓴다:
 
 실행 (저장소 루트에서):
     python ml/train_posture_cnn_8cls.py
-    python ml/train_posture_cnn_8cls.py --dummy-dir data/dummy_64ch_turtle   # 거북목 더미 섞기
-    # 현재 모델 (2026-10-23, LOPO 68.9%). 옵션 비교는 RUNBOOK_8cls.md 참고
-    python ml/train_posture_cnn_8cls.py --dummy-dir data/dummy_64ch_turtle --fill-shoulder --turtle-from-straight
+    python ml/train_posture_cnn_8cls.py --dummy-dir data/dummy/chair_64ch_posture_data_dummy.csv.gz
 결과: ml/posture_model_8cls.pt, ml/norm_stats_8cls.json, ml/runs/8cls/ (혼동행렬 등)
 """
 
@@ -85,7 +84,7 @@ class PostureCNN64(nn.Module):
 
 def passes_protocol(d: pd.DataFrame) -> bool:
     """녹화 하나가 수집 기준(엑셀 합격 기준 + 어깨 기준, gen_dummy_64ch.py 와 동일)을 통과하는지.
-    거북목: 등은 닿고 어깨는 뜸 / 앞으로 숙이기: 등받이 0 / 그 밖의 앉은 자세: 어깨가 등받이에 닿음."""
+    앞으로 숙이기: 등받이 0 / 그 밖의 앉은 자세: 어깨가 등받이에 닿음."""
     import gen_dummy_64ch as G
     p = str(d["posture"].iloc[0])
     X = d[CH_COLS].values.astype(float)
@@ -96,8 +95,6 @@ def passes_protocol(d: pd.DataFrame) -> bool:
     if not G.passes(p, G.metrics(X, dur, len(X))):
         return False
     bt = m[32:].sum()
-    if p == "turtle_neck":
-        return bt >= 400 and m[G.SHOULDER].sum() / bt * 100 <= 3
     if p == "lean_forward":
         return bt <= 100
     return True
@@ -207,10 +204,9 @@ def confusion_of(y_true, y_pred) -> np.ndarray:
 
 
 SHOULDER = [f"ch{i}" for i in range(56, 64)]   # 등받이 어깨 줄
-BACK_LOW = [f"ch{i}" for i in range(32, 56)]   # 등받이 허리·중간 줄
-OPTS = {"turtle_from_straight": False, "drop_straight_no_shoulder": False, "fill_shoulder": False,
-        "no_real_train": []}   # 학습에서 뺄 실측 자세 (평가에는 남김). 예: ["turtle_neck"]
-# 어깨가 등받이에 닿아야 하는 자세 (거북목·앞으로 숙이기·앉지 않음 제외)
+OPTS = {"drop_straight_no_shoulder": False, "fill_shoulder": False,
+        "no_real_train": []}   # 학습에서 뺄 실측 자세 (평가에는 남김)
+# 어깨가 등받이에 닿아야 하는 자세 (앞으로 숙이기·앉지 않음 제외)
 SHOULDER_POSTURES = ["sitting_straight", "cross_leg_right", "cross_leg_left", "lean_right", "lean_left"]
 SHOULDER_OK = 200      # 정자세에서 어깨가 '닿았다'고 볼 어깨 줄 합
 SHOULDER_NONE = 100    # 이보다 작으면 정자세인데 어깨가 안 닿은 녹화
@@ -220,7 +216,7 @@ def fill_shoulder(tr: pd.DataFrame, key: list) -> pd.DataFrame:
     """[가짜 데이터] 어깨가 닿아야 하는 자세인데 어깨 줄이 비어 있는 녹화에, 어깨가 닿은 녹화의
     같은 자세 평균 어깨 압력을 채운다. 같은 자세 재료가 없으면 정자세 재료를 쓴다.
     재료는 학습 데이터 안에서만 고른다 (테스트할 사람 데이터는 쓰지 않음).
-    이렇게 하면 '어깨가 비어 있음'은 거북목에만 남는다. 실제 측정값이 아니므로 평가에는 쓰지 않는다."""
+    실제 측정값이 아니므로 평가에는 쓰지 않는다."""
     rng = np.random.default_rng(SEED)
     sh = tr.groupby(key)[SHOULDER].mean()
     total = sh.sum(axis=1)
@@ -246,14 +242,11 @@ def fill_shoulder(tr: pd.DataFrame, key: list) -> pd.DataFrame:
 def adjust_training(tr: pd.DataFrame) -> pd.DataFrame:
     """학습 데이터에만 적용 (평가 데이터는 건드리지 않는다).
 
-    turtle_from_straight: 어깨가 닿은 정자세 녹화에서 어깨 줄을 0 으로 떼고 등 압력을 줄여
-        거북목(등은 닿고 어깨만 뜸) 샘플을 만든다. 녹화 1개당 2벌 (등 압력 x0.6, x0.9).
-    drop_straight_no_shoulder: 어깨가 안 닿은 정자세 녹화를 학습에서 뺀다
-        (거북목과 숫자가 같아서 '어깨가 비어도 정자세'로 잘못 가르치기 때문).
+    drop_straight_no_shoulder: 어깨가 안 닿은 정자세 녹화를 학습에서 뺀다 (정자세 정의와 다름).
     """
     if OPTS["no_real_train"]:
         tr = tr[~tr["posture"].isin(OPTS["no_real_train"])]
-    if not (OPTS["turtle_from_straight"] or OPTS["drop_straight_no_shoulder"] or OPTS["fill_shoulder"]):
+    if not (OPTS["drop_straight_no_shoulder"] or OPTS["fill_shoulder"]):
         return tr
     key = ["session", "posture", "trial"]
     if OPTS["fill_shoulder"]:
@@ -265,39 +258,6 @@ def adjust_training(tr: pd.DataFrame) -> pd.DataFrame:
         bad = set(sh[sh < SHOULDER_NONE].index)
         keep = ~tr[key].apply(tuple, axis=1).isin(bad)
         out = tr[keep]
-    if OPTS["turtle_from_straight"]:
-        good = set(sh[sh >= SHOULDER_OK].index)
-        src = straight[straight[key].apply(tuple, axis=1).isin(good)]
-        made = []
-        for f in (0.6, 0.9):
-            t = src.copy()
-            t[SHOULDER] = 0
-            t[BACK_LOW] = (t[BACK_LOW] * f).round()
-            t["posture"] = "turtle_neck"
-            made.append(t)
-        if made:
-            out = pd.concat([out] + made, ignore_index=True)
-    return out
-
-
-# 거북목 규칙: 팀 정의(등은 닿고 어깨만 뜸)를 숫자로 옮긴 것. 모델 판정 뒤에 덮어쓴다.
-# 앱도 같은 규칙을 쓰도록 norm_stats json 의 "turtle_rule" 에 저장한다.
-TURTLE_RULE = {
-    "seat_min": 6000,        # 좌석 ch0~31 합: 앉아 있음
-    "back_min": 400,         # 등받이 허리·중간 ch32~55 합: 등이 닿음
-    "shoulder_max": 60,      # 등받이 어깨 ch56~63 합: 어깨가 뜸
-}
-
-
-def apply_turtle_rule(pred: np.ndarray, x_raw: np.ndarray) -> np.ndarray:
-    """원시값(정규화 전) 프레임에 규칙이 맞으면 거북목으로 바꾼다."""
-    seat = x_raw[:, :32].sum(1)
-    back = x_raw[:, 32:56].sum(1)
-    shoulder = x_raw[:, 56:64].sum(1)
-    hit = (seat >= TURTLE_RULE["seat_min"]) & (back >= TURTLE_RULE["back_min"]) & \
-          (shoulder <= TURTLE_RULE["shoulder_max"])
-    out = pred.copy()
-    out[hit] = LABEL_TO_IDX["turtle_neck"]
     return out
 
 
@@ -318,15 +278,12 @@ def evaluate_fold(df: pd.DataFrame, test_person: str, dummy: pd.DataFrame | None
     yte = te["posture"].map(LABEL_TO_IDX).values
 
     pred = predict(train(xtr, ytr), xte)
-    pred_rule = apply_turtle_rule(pred, te[CH_COLS].values.astype(np.float32))
     conf = confusion_of(yte, pred)
-    conf_rule = confusion_of(yte, pred_rule)
     # 정의대로 앉은(수집 기준 통과) 녹화만 따로 평가
     key = ["session", "posture", "trial"]
     ok_keys = {k for k, g in te.groupby(key) if passes_protocol(g)}
     ok = te[key].apply(tuple, axis=1).isin(ok_keys).values
     conf_ok = confusion_of(yte[ok], pred[ok])
-    conf_rule_ok = confusion_of(yte[ok], pred_rule[ok])
     per_class = {}
     for k, name in enumerate(LABEL_ORDER):
         n = int(conf[k].sum())
@@ -341,11 +298,8 @@ def evaluate_fold(df: pd.DataFrame, test_person: str, dummy: pd.DataFrame | None
         "accuracy": float((pred == yte).mean()),
         "per_class": per_class,
         "confusion": conf.tolist(),
-        "accuracy_rule": float((pred_rule == yte).mean()),
-        "confusion_rule": conf_rule.tolist(),
         "confusion_ok": conf_ok.tolist(),
-        "confusion_rule_ok": conf_rule_ok.tolist(),
-        "accuracy_rule_ok": float((pred_rule[ok] == yte[ok]).mean()) if ok.any() else None,
+        "accuracy_ok": float((pred[ok] == yte[ok]).mean()) if ok.any() else None,
     }
 
 
@@ -390,21 +344,18 @@ def main():
                          "data/dummy/chair_64ch_posture_data_dummy.csv.gz")
     ap.add_argument("--dummy-every", type=int, default=10,
                     help="더미는 N 프레임마다 1개만 쓴다 (기본 10)")
-    ap.add_argument("--turtle-from-straight", action="store_true",
-                    help="어깨가 닿은 정자세에서 어깨 줄을 떼어 거북목 샘플을 만들어 학습에 더한다")
     ap.add_argument("--drop-straight-no-shoulder", action="store_true",
                     help="어깨가 안 닿은 정자세 녹화를 학습에서 뺀다 (평가에는 남김)")
     ap.add_argument("--fill-shoulder", action="store_true",
                     help="[가짜 데이터] 어깨가 안 닿게 찍힌 정자세·다리꼬기·기대기에 어깨 압력을 채워 학습 (평가는 실측 그대로)")
     ap.add_argument("--dummy-postures", default="",
-                    help="더미에서 이 자세만 쓴다 (쉼표). 예: turtle_neck")
+                    help="더미에서 이 자세만 쓴다 (쉼표). 예: lean_left")
     ap.add_argument("--no-real-train", default="",
-                    help="이 자세의 실측은 학습에서 뺀다 (평가에는 남김, 쉼표). 예: turtle_neck")
+                    help="이 자세의 실측은 학습에서 뺀다 (평가에는 남김, 쉼표). 예: lean_left")
     ap.add_argument("--only-passing", action="store_true",
                     help="실측도 수집 기준(합격 기준 + 어깨 기준)을 통과한 녹화만 학습·평가에 쓴다")
     ap.add_argument("--no-save", action="store_true", help="평가만 하고 모델·json 은 저장하지 않는다 (실험용)")
     args = ap.parse_args()
-    OPTS["turtle_from_straight"] = args.turtle_from_straight
     OPTS["drop_straight_no_shoulder"] = args.drop_straight_no_shoulder
     OPTS["fill_shoulder"] = args.fill_shoulder
     ONLY_PASSING["on"] = args.only_passing
@@ -463,26 +414,17 @@ def main():
         rec = f"{total_conf[i, i] / n * 100:5.1f}%" if n else "  -  "
         print(f"  p{i} {name:15s} " + " ".join(f"{v:>6}" for v in total_conf[i]) + f"   {rec}")
 
-    rule_conf = sum(np.array(f["confusion_rule"]) for f in folds)
-    rule_mean = float(np.mean([f["accuracy_rule"] for f in folds]))
-    print(f"\n[거북목 규칙 적용] 사람 단위 평균 {rule_mean * 100:.1f}%  (규칙: {TURTLE_RULE})")
     ok_conf = sum(np.array(f["confusion_ok"]) for f in folds)
-    rule_ok_conf = sum(np.array(f["confusion_rule_ok"]) for f in folds)
-    ok_means = [f["accuracy_rule_ok"] for f in folds if f["accuracy_rule_ok"] is not None]
-    rule_ok_mean = float(np.mean(ok_means)) if ok_means else float("nan")
 
     def rate(c, i):
         n = c[i].sum()
         return f"{c[i, i] / n * 100:6.1f}%" if n else "     - "
 
-    print("  자세                [전체 녹화] 모델만  모델+규칙 | [정의대로 앉은 녹화] 모델만  모델+규칙  (녹화 프레임 수)")
+    print("\n  자세                [전체 녹화] | [정의대로 앉은 녹화]  (녹화 프레임 수)")
     for i, name in enumerate(LABEL_ORDER):
-        print(f"  r{i} {name:15s}  {rate(total_conf, i)}  {rate(rule_conf, i)}  |  "
-              f"{rate(ok_conf, i)}  {rate(rule_ok_conf, i)}  ({int(ok_conf[i].sum())})")
-    pooled = lambda c: np.trace(c) / c.sum() * 100
-    print(f"  프레임 합산          {pooled(total_conf):6.1f}%  {pooled(rule_conf):6.1f}%  |  "
-          f"{pooled(ok_conf):6.1f}%  {pooled(rule_ok_conf):6.1f}%")
-    print(f"  사람 단위 평균 (정의대로 앉은 녹화, 모델+규칙): {rule_ok_mean * 100:.1f}%")
+        print(f"  r{i} {name:15s}  {rate(total_conf, i)}  |  {rate(ok_conf, i)}  ({int(ok_conf[i].sum())})")
+    pooled = lambda c: np.trace(c) / c.sum() * 100 if c.sum() else float("nan")
+    print(f"  프레임 합산          {pooled(total_conf):6.1f}%  |  {pooled(ok_conf):6.1f}%")
 
     if args.no_save:
         print("\n(--no-save: 모델·json·혼동행렬은 저장하지 않음)")
@@ -524,10 +466,6 @@ def main():
         "trained_on_persons": persons,
         "classes_without_data": missing,
         "training_options": dict(OPTS, only_passing=ONLY_PASSING["on"]),
-        "turtle_rule": dict(TURTLE_RULE, how="모델 argmax 뒤에, 원시값(정규화 전)으로 계산해서 맞으면 turtle_neck 으로 덮어쓴다. "
-                                         "seat=ch0~31 합, back=ch32~55 합, shoulder=ch56~63 합",
-                            lopo_mean_accuracy_with_rule=rule_mean,
-                            lopo_mean_accuracy_with_rule_protocol_only=rule_ok_mean),
         "dummy_in_training": None if dummy is None else {
             "dir": args.dummy_dir,
             "frames": int(len(dummy)),

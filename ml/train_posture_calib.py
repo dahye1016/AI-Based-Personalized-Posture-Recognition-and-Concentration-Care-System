@@ -1,23 +1,23 @@
 """
-train_posture_calib.py — 캘리브레이션 + 두 모델 합치기 + 거북목 규칙 (8자세, 64ch)
+train_posture_calib.py — 캘리브레이션 + 두 모델(신경망) 합치기 (7자세, 64ch)
+(앱용 모델은 같은 특징을 쓰는 부스팅 버전 ml/train_posture_gbt.py. 이 파일은 특징·데이터 공용 코드도 겸한다)
 
 앱 입력: [1, 128] float32 = 지금 프레임 원시값 ch0~63 + 캘리브레이션 기준값 ch0~63
   기준값 = 사용자가 정자세(등·어깨를 등받이에 붙임)로 5초 앉았을 때 채널별 평균 (원시값).
-  정규화·특징 계산·거북목 규칙은 모두 모델 안에 들어 있다. 앱은 원시값만 넣으면 된다.
-출력: [1, 8] 자세별 확률. argmax 가 label_order 인덱스.
+  정규화·특징 계산은 모두 모델 안에 들어 있다. 앱은 원시값만 넣으면 된다.
+출력: [1, 7] 자세별 확률. argmax 가 label_order 인덱스.
 
 모델 안에서 하는 일
   1. 부위 특징 98개: 좌석/등받이 합(log), 등받이 비율, 부위 12곳(엉덩이·허벅지·무릎·허리·등중간·어깨 x 좌우)
      비율과 합(log), 좌석/등받이 오른쪽 비율, 채널별 비율(좌석은 좌석합, 등받이는 등받이합으로 나눔),
      좌우 비율 log(오른/왼) (무릎·엉덩이·어깨·허벅지) + 무릎 균형(작은 쪽/큰 쪽)
-  2. 모양 모델: 지금 프레임 특징 -> 8자세 확률
-     차이 모델: (지금 프레임 특징 - 기준값 특징) -> 8자세 확률
+  2. 모양 모델: 지금 프레임 특징 -> 자세 확률
+     차이 모델: (지금 프레임 특징 - 기준값 특징) -> 자세 확률
      두 확률을 반반 평균한다. (모양 모델은 기대기·숙이기에, 차이 모델은 사람마다 다른 정자세에 강하다)
-  3. 거북목 규칙: 좌석 합 >= 6000, 등받이 허리+중간 합 >= 400, 어깨 합 <= 60 이면 거북목.
 
 학습 데이터
-  - 실측 (data/raw_64ch, _reject 제외) 중 거북목을 뺀 7자세. 거북목은 실측을 쓰지 않는다.
-  - 더미 8자세 (data/dummy/chair_64ch_posture_data_dummy.csv.gz, 20프레임마다 1개)
+  - 실측 (data/raw_64ch, _reject 제외). --spec 이면 팀 자세 정의에 맞는 녹화만.
+  - 더미 (data/dummy/chair_64ch_posture_data_dummy.csv.gz, 20프레임마다 1개)
   - 좌우 반전 증강 (줄마다 순서 뒤집기 + 좌우 자세 라벨 교환)
 평가: 사람 단위 LOPO. 실측만. 테스트할 사람 녹화가 재료로 들어간 더미는 그 fold 학습에서 뺀다.
   캘리브레이션에 쓴 5초는 평가에서 뺀다.
@@ -102,7 +102,8 @@ class Features(nn.Module):
         rs = x @ self.reg                                              # [B,12]
         denom = seat * self.is_seat_reg + back * (1.0 - self.is_seat_reg)
         sd = x @ self.side                                             # [B,2]
-        # 좌우 비율: 거북목(양쪽 무릎 닿음)과 다리 꼬기(한쪽 무릎 들림)를 몸무게·캘리브레이션과 무관하게 가른다
+        # 좌우 비율: 양쪽 무릎이 다 닿았는지(정자세 등)와 한쪽 무릎이 들렸는지(다리 꼬기)를
+        # 몸무게·캘리브레이션과 무관하게 가른다
         kl, kr = x[:, 24:28].sum(1, keepdim=True) + 10.0, x[:, 28:32].sum(1, keepdim=True) + 10.0
         hl, hr = x[:, 0:5].sum(1, keepdim=True) + 10.0, x[:, 5:10].sum(1, keepdim=True) + 10.0
         sl, sr = x[:, 60:64].sum(1, keepdim=True) + 10.0, x[:, 56:60].sum(1, keepdim=True) + 10.0
@@ -123,21 +124,16 @@ def mlp():
                          nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, N))
 
 
-USE_RULE = {"on": True}      # --no-rule 이면 거북목 규칙 없이 모델 판정만
-
-
 class CalibNet(nn.Module):
-    """입력 [B,128] = 지금 프레임 64 + 기준값 64 (원시값). 출력 [B,8] 확률."""
+    """입력 [B,128] = 지금 프레임 64 + 기준값 64 (원시값). 출력 [B,N] 확률."""
 
     def __init__(self):
         super().__init__()
-        self.use_rule = USE_RULE["on"]
         self.feat = Features()
         self.shape_head = mlp()
         self.diff_head = mlp()
         for name in ("mu_s", "sd_s", "mu_d", "sd_d"):
             self.register_buffer(name, torch.zeros(N_FEAT) if name.startswith("mu") else torch.ones(N_FEAT))
-        self.register_buffer("turtle_onehot", torch.eye(N)[L["turtle_neck"]])
 
     def logits(self, x, b):
         fx, fb = self.feat(x), self.feat(b)
@@ -148,13 +144,7 @@ class CalibNet(nn.Module):
     def forward(self, xb):
         x, b = xb[:, :64], xb[:, 64:]
         ls, ld = self.logits(x, b)
-        p = (1.0 - W_REL) * torch.softmax(ls, 1) + W_REL * torch.softmax(ld, 1)
-        if not self.use_rule:
-            return p
-        R = T.TURTLE_RULE
-        hit = ((x[:, :32].sum(1) >= R["seat_min"]) & (x[:, 32:56].sum(1) >= R["back_min"])
-               & (x[:, 56:64].sum(1) <= R["shoulder_max"])).float().unsqueeze(1)
-        return hit * self.turtle_onehot + (1.0 - hit) * p
+        return (1.0 - W_REL) * torch.softmax(ls, 1) + W_REL * torch.softmax(ld, 1)
 
 
 # ---- 데이터 ----------------------------------------------------------------
@@ -248,12 +238,10 @@ def predict(net, X, base):
 def main():
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--no-rule", action="store_true", help="거북목 규칙 없이 모델 판정만 쓴다")
     ap.add_argument("--spec", action="store_true",
-                    help="팀 자세 정의(gen_dummy_spec.py)에 맞는 실측 녹화만 학습에 쓰고(거북목 포함), "
+                    help="팀 자세 정의(gen_dummy_spec.py)에 맞는 실측 녹화만 학습에 쓰고, "
                          "평가의 '정의대로 앉은 녹화'도 이 정의로 고른다")
     args = ap.parse_args()
-    USE_RULE["on"] = not args.no_rule
     np.random.seed(SEED)
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     T.ONLY_PASSING["on"] = False
@@ -279,10 +267,10 @@ def main():
     print("정의에 맞는 실측 녹화:", sorted({f"{k[0]}:{k[1]}" for k, g in df[ok].groupby(key)}))
 
     def train_real(d):
-        """학습에 쓸 실측: --spec 이면 정의에 맞는 녹화만(거북목 포함), 아니면 거북목 뺀 전체."""
+        """학습에 쓸 실측: --spec 이면 정의에 맞는 녹화만, 아니면 전체."""
         if args.spec:
             return d[ok[d.index]]
-        return d[d["posture"] != "turtle_neck"]
+        return d
     drop = np.zeros(len(df), bool)                       # 캘리브레이션 5초는 평가에서 뺀다
     for s, (trial, _) in cal_used.items():
         m = ((df["session"] == s) & (df["posture"] == "sitting_straight") & (df["trial"] == trial)).values
@@ -377,7 +365,7 @@ def main():
             "input_dtype": "float32",
             "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63]. 정규화하지 말 것 (모델 안에서 함)",
             "output_shape": out_shape,
-            "output": "8자세 확률 (argmax 가 label_order 인덱스). 거북목 규칙이 모델 안에 포함됨",
+            "output": f"{N}자세 확률 (argmax 가 label_order 인덱스)",
             "pt_vs_tflite_agreement": agreement,
         },
         "raw_input": True,
@@ -387,9 +375,7 @@ def main():
             "how": "사용자가 정자세(허리·등·어깨를 등받이에 붙임)로 5초 앉는 동안 채널별 원시값 평균 64개를 저장해 두고, "
                    "매 프레임 입력 뒤쪽 64개로 같이 넣는다. 사용자·의자 위치가 바뀌면 다시 잰다.",
         },
-        "turtle_rule": (dict(T.TURTLE_RULE, note="모델 안에 포함됨 (앱에서 따로 할 필요 없음)")
-                        if USE_RULE["on"] else None),
-        "training_mode": {"rule": USE_RULE["on"], "spec": args.spec,
+        "training_mode": {"spec": args.spec,
                           "spec_note": "gen_dummy_spec.py 의 SPEC (팀 자세 정의 2026-10-25)" if args.spec else None},
         "ensemble": {"shape_model_weight": 1 - W_REL, "diff_model_weight": W_REL},
         "trained_on_persons": persons,

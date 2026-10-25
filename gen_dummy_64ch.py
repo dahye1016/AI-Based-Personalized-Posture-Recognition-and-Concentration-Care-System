@@ -1,28 +1,25 @@
 """
-gen_dummy_64ch.py — 센서 도착 전까지 쓰는 64ch 더미 데이터 생성기 (방석 32 + 등받이 32, 8자세)
+gen_dummy_64ch.py — 64ch 더미 데이터 생성기 (방석 32 + 등받이 32, 7자세) + 공용 함수
+(지금 쓰는 더미는 gen_dummy_spec.py 로 만든다. 그 생성기가 이 파일의 synth / make_person / metrics / passes 를 쓴다)
 
 [목적] 파이프라인(변환 → 학습 → 서버 → 앱) 개발용. 실측이 아니므로 이 데이터로 나온
-       정확도는 성과로 쓰지 말 것. 센서가 오면 data\\raw_64ch 의 진짜 CSV 로 다시 학습한다.
+       정확도는 성과로 쓰지 말 것.
 
 [방식] 실측 파일을 '재료'로 쓴다. 자세마다 실측 파일 하나를 골라 그 채널 모양과 프레임
        잡음을 가져오고, 가상 참가자마다 다음을 바꿔 변형한다.
          - 방석/등받이 전체 크기(체격), 채널별 작은 흔들림, 좌우 습관(방석 좌우 쏠림)
          - 길이(1244~1344프레임), 시간에 따른 느린 변동
        그런 다음 엑셀 '합격 기준 수치표'와 같은 기준으로 검사해서, 통과한 것만 저장한다.
-       (실측 재료는 거북목 = dahye/yewon 만 쓴다. aro/junseo 거북목은 등이 안 닿아 불량.)
 
-[거북목 vs 앞으로 숙이기 — 섞지 않는다]
-   lean_forward : 등받이 전체가 0 (재료도 등받이를 0 으로 만든다)
-   turtle_neck  : 등(허리·중간 줄)은 닿고 어깨 줄(ch56~63)은 거의 0
-   두 자세의 재료·변형·검사 기준이 서로 다르고, 생성 뒤에도 서로 침범하지 않았는지 다시 확인한다.
+[앞으로 숙이기] 등받이 전체가 0 (재료도 등받이를 0 으로 만든다)
 
 [출력] data\\dummy_64ch\\<자세>\\dummy_<id>_<자세>_<회차>.csv
        컬럼: frame,timestamp,ch0..ch63,person,posture,trial  (실측과 동일)
        person 은 항상 'dummy_...' 로 시작한다. 실측 폴더(data\\raw_64ch)와 섞지 말 것.
        <out>_manifest.csv (예: data\\dummy_64ch_manifest.csv) : 파일별 가상 참가자, 케이스 ID, 체격 배율
 
-사용 예 (PowerShell, C:\\Users\\jungd\\posture-64ch)
-    python gen_dummy_64ch.py                               # 40명 x 8자세 x 5회 = 1,600파일
+사용 예
+    python gen_dummy_64ch.py                               # 40명 x 7자세 x 5회
     python gen_dummy_64ch.py --persons 60 --trials 8       # 더 많이
     python gen_dummy_64ch.py --templates data\\raw_64ch --out data\\dummy_64ch --seed 7
 """
@@ -34,8 +31,9 @@ import sys
 import numpy as np
 import pandas as pd
 
-POSTURES = ["not_sitting", "sitting_straight", "lean_forward", "cross_leg_right",
-            "cross_leg_left", "lean_right", "lean_left", "turtle_neck"]
+from posture_names import POSTURE_ORDER
+
+POSTURES = list(POSTURE_ORDER)
 CH = [f"ch{i}" for i in range(64)]
 SEAT_R = list(range(5, 10)) + list(range(17, 24)) + list(range(28, 32))
 SEAT_L = [i for i in range(32) if i not in SEAT_R]
@@ -57,12 +55,10 @@ CRIT = {
     "cross_leg_left":   {0: (6000, None), 1: (500, None), 3: (60, None), 6: (4, None)},
     "lean_right":       {0: (6000, None), 1: (1000, None), 3: (52, None), 4: (80, None), 6: (4, None)},
     "lean_left":        {0: (6000, None), 1: (1000, None), 4: (None, 20), 6: (4, None)},
-    "turtle_neck":      {0: (6000, None), 1: (400, None), 3: (40, 60), 5: (None, 3), 6: (3, None)},
 }
 Q = dict(frames_min=1100, dur=(19, 22), fps=(55, 70), cv_max=10.0, sat_max=0.5, empty_seat=300)
 
-# 어깨 기준 (2026-10-23 추가): 거북목·앞으로 숙이기·앉지 않음을 뺀 자세는 어깨가 등받이에 닿아야 한다.
-# 이 기준이 없으면 '어깨가 비어 있음'이 거북목만의 특징이 되지 못해서 거북목을 구분할 수 없다.
+# 어깨 기준 (2026-10-23 추가): 앞으로 숙이기·앉지 않음을 뺀 자세는 어깨가 등받이에 닿아야 한다.
 SHOULDER_POSTURES = ["sitting_straight", "cross_leg_right", "cross_leg_left", "lean_right", "lean_left"]
 SHOULDER_MIN = 200     # 어깨 줄(ch56~63) 평균 합
 
@@ -121,35 +117,11 @@ def passes(posture, M):
     return True
 
 
-# --turtle-mix: 거북목 = 실측 거북목의 등받이 + 아무 사람의 정자세 좌석.
-# 거북목은 상체만 앞으로 나온 자세라 엉덩이·다리(좌석)는 정자세와 같다. 좌석 모양을 여러 사람 것으로
-# 섞어서, 모델이 좌석이 아니라 등받이(어깨가 비었는지)로 거북목을 가리게 한다.
-TURTLE_SEATS = []      # (좌석 32ch 배열, 사람)
-
-
-def straight_seat_ok(X):
-    """정자세 좌석으로 쓸 만한지 (어깨 기준과 무관하게 좌석만 본다)."""
-    m = X.mean(0)
-    st = m[:32].sum()
-    return st >= 6000 and 40 <= m[SEAT_R].sum() / st * 100 <= 60
-
-
-def load_templates(tdir, turtle_mix=False):
-    """자세별 재료 목록. 거북목은 '등은 닿고 어깨 줄 거의 0'인 파일만 쓴다."""
+def load_templates(tdir):
+    """자세별 재료 목록 (합격 기준 통과 녹화만)."""
     T = {p: [] for p in POSTURES}
-    all_files = sorted(f for f in glob.glob(os.path.join(tdir, "**", "*.csv"), recursive=True)
-                       if "dummy" not in os.path.basename(f))
-    files = [f for f in all_files if "_reject" not in os.path.basename(f)]
-    if turtle_mix:
-        for f in all_files:                       # 좌석만 쓰므로 어깨 때문에 _reject 된 정자세도 쓴다
-            d = pd.read_csv(f)
-            if str(d.get("posture", pd.Series([""])).iloc[0]) != "sitting_straight":
-                continue
-            X = d[CH].values.astype(float)
-            if straight_seat_ok(X):
-                TURTLE_SEATS.append((X[:, :32], str(d["person"].iloc[0])))
-            else:
-                print(f"  거북목 좌석 재료 제외: {os.path.basename(f)}")
+    files = sorted(f for f in glob.glob(os.path.join(tdir, "**", "*.csv"), recursive=True)
+                   if "dummy" not in os.path.basename(f) and "_reject" not in os.path.basename(f))
     for f in files:
         d = pd.read_csv(f)
         if any(c not in d.columns for c in CH + ["posture", "timestamp"]):
@@ -165,10 +137,6 @@ def load_templates(tdir, turtle_mix=False):
             dur = float(d["timestamp"].iloc[-1] - d["timestamp"].iloc[0])
             if not passes(p, metrics(X, dur, len(X))):
                 print(f"  재료 제외 (기준 불통과): {os.path.basename(f)}")
-                continue
-        if p == "turtle_neck":
-            sh = m[SHOULDER].sum() / bt * 100 if bt > BACK_MIN_FOR_SHARE else 100
-            if bt < 400 or sh > 3:
                 continue
         if p == "lean_forward" and bt > 100:   # 등받이가 0 이 아니면 재료로 쓰지 않음
             continue
@@ -197,11 +165,6 @@ def synth(posture, tpl, P, rng):
     # 길이 맞춰 다시 뽑기(시간 순서 유지)
     idx = np.clip(np.round(np.linspace(0, len(src) - 1, n)).astype(int), 0, len(src) - 1)
     Xs = src[idx].copy()
-    if posture == "turtle_neck" and TURTLE_SEATS:
-        seat, seat_person = TURTLE_SEATS[rng.integers(len(TURTLE_SEATS))]
-        sidx = np.clip(np.round(np.linspace(0, len(seat) - 1, n)).astype(int), 0, len(seat) - 1)
-        Xs[:, :32] = seat[sidx]
-        src_person = f"{src_person}+{seat_person}"            # 등받이 재료 + 좌석 재료
     mean, dev = Xs.mean(0), Xs - Xs.mean(0)
     g = np.ones(64)
     g[:32] = P["body"]
@@ -216,8 +179,6 @@ def synth(posture, tpl, P, rng):
     X += rng.normal(0, 1.0, X.shape) * (X > 5)                  # 센서 잡음(0 은 0 으로 둠)
     if posture == "lean_forward":
         X[:, 32:] = 0                                           # 등이 안 닿는 자세: 등받이 완전 0
-    if posture == "turtle_neck":
-        X[:, SHOULDER] = np.minimum(X[:, SHOULDER], 5)          # 어깨는 뜬 채: 거의 0
     if posture == "not_sitting":
         X[:] = 0
     X = np.clip(np.round(X), 0, MAXV)
@@ -235,21 +196,16 @@ def main():
     ap.add_argument("--xlsx", default=None, help="'실측_참가자섭외_합격기준_64ch.xlsx' (있으면 수치표를 읽어 기준으로 씀)")
     ap.add_argument("--fps", type=float, default=62.3)
     ap.add_argument("--postures", default="",
-                    help="이 자세만 만든다 (쉼표로 여러 개). 예: turtle_neck. 비우면 8자세 전부")
-    ap.add_argument("--turtle-mix", action="store_true",
-                    help="거북목 = 실측 거북목 등받이 + 여러 사람의 정자세 좌석 (좌석 모양을 다양하게)")
+                    help="이 자세만 만든다 (쉼표로 여러 개). 예: lean_left. 비우면 7자세 전부")
     a = ap.parse_args()
     if a.xlsx:
         load_xlsx_criteria(a.xlsx)
-    ap2_mix = a.turtle_mix
     targets = [p.strip() for p in a.postures.split(",") if p.strip()] or POSTURES
     bad = [p for p in targets if p not in POSTURES]
     if bad:
         sys.exit(f"알 수 없는 자세: {bad}")
     rng = np.random.default_rng(a.seed)
-    T = load_templates(a.templates, turtle_mix=ap2_mix)
-    if ap2_mix:
-        print(f"거북목 좌석 재료 {len(TURTLE_SEATS)}개 ({', '.join(sorted({s for _, s in TURTLE_SEATS}))})")
+    T = load_templates(a.templates)
     need = [p for p in targets if p != "not_sitting" and not T[p]]
     for p in targets:
         print(f"재료 {p:17s} {len(T[p])}개  ({', '.join(sorted({s for _, s in T[p]}))})")
@@ -278,7 +234,7 @@ def main():
                 if not ok:
                     fail += 1
                     continue
-                ts = t0 + np.arange(n) / a.fps + rng.normal(0, 0.0004, n).cumsum() * 0
+                ts = t0 + np.arange(n) / a.fps
                 df = pd.DataFrame(X.astype(int), columns=CH)
                 df.insert(0, "timestamp", ts)
                 df.insert(0, "frame", np.arange(n))
@@ -296,23 +252,13 @@ def main():
     man_path = os.path.normpath(a.out) + "_manifest.csv"      # 데이터 폴더 밖에 둔다(변환기가 CSV 를 전부 읽기 때문)
     man.to_csv(man_path, index=False, encoding="utf-8-sig")
 
-    # ---- 자체 점검: 거북목 / 앞으로 숙이기가 섞이지 않았는지 ------------------------------------
+    # ---- 자체 점검: 앞으로 숙이기는 등받이 0 ------------------------------------------------------
     lf = man[man.posture == "lean_forward"].back_total
-    tn = man[man.posture == "turtle_neck"].back_total
     print(f"\n생성 {made}파일 (기준 불통과로 포기 {fail}), 가상 참가자 {len(persons)}명 -> {a.out}")
     print(man.groupby(["posture", "template_person"]).size().to_string())
     if len(lf):
         print(f"앞으로 숙이기 등받이 총압력: 최대 {lf.max():.0f} (기준 100 이하)")
         assert lf.max() <= 100, "앞으로 숙이기 등받이가 0 이 아닙니다"
-    if len(tn):
-        print(f"거북목 등받이 총압력: 최소 {tn.min():.0f} (기준 400 이상)")
-        assert tn.min() >= 400, "거북목 등받이가 너무 약합니다"
-    print("확인 완료: 거북목은 등이 닿고, 앞으로 숙이기는 등받이 0 — 겹치지 않음")
-    print("\n다음: python -m ml.prepare_chair_data --source csvdir --csv-dir data\\dummy_64ch "
-          "--out chair_64ch_posture_data_dummy.csv")
-    ids = [P["id"] for P in persons]
-    print("      python train_posture_cnn_64ch_dummy.py --data chair_64ch_posture_data_dummy.csv "
-          f"--out-suffix dummy --holdout-persons {ids[-2]},{ids[-1]}")
 
 
 if __name__ == "__main__":

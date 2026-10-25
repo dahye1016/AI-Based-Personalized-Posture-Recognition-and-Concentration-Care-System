@@ -1,5 +1,5 @@
 """
-gen_dummy_spec.py — 팀 자세 정의(2026-10-25)를 그대로 지키는 8자세 더미 생성기 (64ch)
+gen_dummy_spec.py — 팀 자세 정의(2026-10-25)를 그대로 지키는 7자세 더미 생성기 (64ch)
 
 자세 정의 (사람 기준 좌우. 어깨 = 등받이 맨 윗줄 ch56~63, 엉덩이 = 좌석 맨 윗줄 ch0~9)
   오른다리 꼬기 : 오른 무릎(ch28~31)이 들림 = 왼 무릎(ch24~27)의 25% 이하 (실측 5명 기준으로 수정)
@@ -7,7 +7,6 @@ gen_dummy_spec.py — 팀 자세 정의(2026-10-25)를 그대로 지키는 8자�
                   (처음 정의 '같은 쪽 어깨만 닿음 + 엉덩이 그쪽 대부분'은 실측 다리 꼬기 10개 중 맞는 게 없어서 뺐다)
   오른쪽 기대기 : 오른 어깨 닿음, 왼 어깨 안 닿음, 엉덩이는 양쪽 다 닿음
   왼쪽 기대기   : 왼 어깨 닿음, 오른 어깨 안 닿음, 엉덩이는 양쪽 다 닿음
-  거북목        : 등받이 윗부분(어깨) 안 닿음, 등(허리·중간)은 닿음
   정자세        : 다 닿음 (양쪽 엉덩이, 등, 양쪽 어깨)
   앉지 않음     : 전부 0
   앞으로 숙이기 : 어깨 전혀 안 닿음(등받이 전체 거의 0), 방석 압력이 큼
@@ -15,7 +14,8 @@ gen_dummy_spec.py — 팀 자세 정의(2026-10-25)를 그대로 지키는 8자�
 숫자 기준 (SPEC)
   어깨 '닿음' = 그쪽 4채널 합 >= 100, '안 닿음' = <= 20
   엉덩이 '한쪽 대부분' = 그쪽 비율 >= 65%, '다 닿음' = 양쪽 각각 >= 25%
-  거북목 등(ch32~55) >= 400 / 앞으로 숙이기 등받이 전체 <= 100, 좌석 >= 6000 / 앉은 자세 좌석 >= 6000
+  앞으로 숙이기 등받이 전체 <= 100, 좌석 >= 6000 / 앉은 자세 좌석 >= 6000
+  다리 꼬기 = 꼰 쪽 무릎 <= 반대쪽 무릎 x 0.25 (반대쪽 무릎 >= 100)
   (녹화 평균 기준)
 
 만드는 법
@@ -39,9 +39,7 @@ import pandas as pd
 import gen_dummy_64ch as G
 from posture_names import POSTURE_ORDER, POSTURE_TO_PCODE
 
-# 2026-10-25: 거북목은 모델에서 뺐다. 더미도 만들지 않는다 (다시 넣으려면 비울 것).
-EXCLUDE = ["turtle_neck"]
-POSTURES = [p for p in POSTURE_ORDER if p not in EXCLUDE]
+POSTURES = list(POSTURE_ORDER)
 
 CH = [f"ch{i}" for i in range(64)]
 SEAT = [f"seat_{i + 1}" for i in range(32)]
@@ -52,12 +50,11 @@ BACK_LOW = list(range(32, 56))
 
 TOUCH, NONE = 100.0, 20.0
 HIP_MOST, HIP_BOTH = 0.65, 0.25
-SEAT_MIN, TURTLE_BACK_MIN, FWD_BACK_MAX = 6000.0, 400.0, 100.0
+SEAT_MIN, FWD_BACK_MAX = 6000.0, 100.0
 
 # 자세별 정의: (오른 어깨, 왼 어깨, 엉덩이)  어깨: touch/none/any, 엉덩이: R/L/both/any
 # 2026-10-25 수정: 다리 꼬기는 실측(5명 모두)에 맞춰 '꼰 쪽 무릎이 반대쪽 무릎의 25% 이하'로 정의한다.
 #   실측 다리 꼬기는 어깨가 대부분 안 닿고 엉덩이 비율도 40~63% 로 제각각이라 어깨·엉덩이 조건은 두지 않는다.
-#   (어깨 조건을 두면 실측 다리 꼬기가 '어깨가 빈' 거북목과 겹친다. 거북목은 양쪽 무릎이 다 닿아서 무릎으로 갈린다.)
 KNEE_L, KNEE_R = list(range(24, 28)), list(range(28, 32))
 KNEE_LIFT = 0.25
 SPEC = {
@@ -65,7 +62,6 @@ SPEC = {
     "cross_leg_left": ("any", "any", "any"),
     "lean_right": ("touch", "none", "both"),
     "lean_left": ("none", "touch", "both"),
-    "turtle_neck": ("none", "none", "any"),
     "sitting_straight": ("touch", "touch", "both"),
     "lean_forward": ("none", "none", "any"),
     "not_sitting": ("none", "none", "any"),
@@ -98,8 +94,6 @@ def spec_ok(posture, X):
         return False
     if hip == "both" and not (HIP_BOTH <= s <= 1 - HIP_BOTH):
         return False
-    if posture == "turtle_neck" and M["back_low"] < TURTLE_BACK_MIN:
-        return False
     if posture in ("cross_leg_right", "cross_leg_left"):
         m = X.mean(0)
         kr, kl = m[KNEE_R].sum(), m[KNEE_L].sum()
@@ -126,7 +120,7 @@ def load(tdir):
             continue
         if p == "lean_forward" and M["back"] > FWD_BACK_MAX:
             continue
-        if p == "turtle_neck" and (M["back_low"] < TURTLE_BACK_MIN or max(M["sh_r"], M["sh_l"]) > 60):
+        if p not in tpl:
             continue
         tpl[p].append((X, who))
         if p in ("sitting_straight", "lean_right", "lean_left", "cross_leg_right", "cross_leg_left"):
@@ -192,20 +186,6 @@ def main():
     a = ap.parse_args()
     rng = np.random.default_rng(a.seed)
     tpl, donors = load(a.templates)
-    # 거북목 재료 = 실측 거북목 등받이 x 모든 정자세 좌석 (거북목은 상체만 앞으로 나와서 좌석은 정자세와 같다).
-    # 좌석 모양을 여러 사람 것으로 섞어야 모델이 좌석이 아니라 등받이(어깨만 빔)로 거북목을 가린다.
-    seats = list(tpl["sitting_straight"])
-    for f in sorted(glob.glob(os.path.join(a.templates, "*sitting_straight*_reject.csv"))):
-        d = pd.read_csv(f)
-        seats.append((d[CH].values.astype(float), str(d["person"].iloc[0])))
-    mixed = []
-    for Xt, wt in (tpl["turtle_neck"] if "turtle_neck" in POSTURES else []):
-        for Xs, ws in seats:
-            n = min(len(Xt), len(Xs))
-            X = resample(Xt, n).copy()
-            X[:, :32] = resample(Xs, n)[:, :32]
-            mixed.append((X, wt if wt == ws else f"{wt}+{ws}"))
-    tpl["turtle_neck"] = mixed
     for p in POSTURES:
         print(f"재료 {p:17s} {len(tpl[p])}개 ({', '.join(sorted({w for _, w in tpl[p]}))})")
     print(f"어깨 재료 오른쪽 {len(donors['R'])}개, 왼쪽 {len(donors['L'])}개")

@@ -10,7 +10,7 @@ data/raw_64ch 의 실측 녹화에서 프레임을 하나씩 무작위로 뽑아
 실행 (저장소 루트에서):
     python ml/tflite_demo_gbt.py                 # 모든 사람·자세에서 무작위
     python ml/tflite_demo_gbt.py --person dahye  # 한 사람만 (이름 뒤 날짜 붙은 회차도 포함)
-    python ml/tflite_demo_gbt.py --posture turtle_neck
+    python ml/tflite_demo_gbt.py --posture cross_leg_right
     python ml/tflite_demo_gbt.py --fast          # 기다리지 않고 빠르게
     python ml/tflite_demo_gbt.py --fast --count 500   # 500개만 보고 자세별 정확도 출력
 """
@@ -54,7 +54,7 @@ def calibration():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--person", default="", help="이 사람만 (예: dahye, aro)")
-    ap.add_argument("--posture", default="", help="이 자세만 (예: turtle_neck)")
+    ap.add_argument("--posture", default="", help="이 자세만 (예: cross_leg_right)")
     ap.add_argument("--fast", action="store_true", help="0.3초 쉬지 않고 바로바로")
     ap.add_argument("--count", type=int, default=0, help="이 개수만 보고 끝내기 (0 = Ctrl+C 까지 계속)")
     a = ap.parse_args()
@@ -80,7 +80,7 @@ def main():
         who = s.rstrip("0123456789")
         if (a.person and who != a.person) or (a.posture and p != a.posture) or s not in cal:
             continue
-        if p not in labels:                      # 모델에서 뺀 자세(거북목 등)는 건너뛴다
+        if p not in labels:                      # 모델에 없는 자세는 건너뛴다
             continue
         recs.append((s, p, d[CH].values.astype(np.float32)))
     if not recs:

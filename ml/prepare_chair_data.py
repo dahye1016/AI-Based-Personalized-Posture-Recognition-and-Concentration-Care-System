@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-더미/실측 posture 데이터 -> chair_64ch_posture_data.csv 스키마로 변환 (8종 버전).
+더미/실측 posture 데이터 -> chair_64ch_posture_data.csv 스키마로 변환 (7종 버전).
 
 한 행 = 한 시점(프레임) 샘플:
-    seat_1~32, back_1~32, Label(p0~p7) [, Person]
+    seat_1~32, back_1~32, Label(p0~p6) [, Person]
 
-라벨 정의는 루트의 posture_names.py 한 곳에만 있다 (앱 순서 0~7과 동일):
+라벨 정의는 루트의 posture_names.py 한 곳에만 있다 (앱 순서 0~6과 동일):
     p0 앉지 않음 / p1 정자세 / p2 앞으로 숙이기 / p3 오른다리 꼬기 /
-    p4 왼다리 꼬기 / p5 오른쪽 기대기 / p6 왼쪽 기대기 / p7 거북목
+    p4 왼다리 꼬기 / p5 오른쪽 기대기 / p6 왼쪽 기대기
 
-※ 예전(7종) 버전과 의미가 달라졌다 (not_sitting: p7->p0, turtle_neck: p7 신규).
+※ 예전(서버 p1~p7) 버전과 번호가 다르다 (not_sitting: p7->p0).
    예전에 만든 CSV·모델·norm_stats 는 새 라벨과 호환되지 않으니 이 스크립트로 다시 만들 것.
 
 사용법
@@ -19,7 +19,7 @@
     python -m ml.prepare_chair_data --source csvdir --csv-dir data/raw_back \
         --out chair_64ch_posture_data_real.csv
 
-    # 팀원 더미 윈도우 npz (turtle_neck 이 없어서 7종만 나옴 — 파이프라인 점검용)
+    # 팀원 더미 윈도우 npz (파이프라인 점검용)
     python -m ml.prepare_chair_data --source npz --npz dummy_windows.npz \
         --out chair_64ch_posture_data_dummy.csv
 
@@ -104,9 +104,9 @@ def from_csvdir(csv_dir: str, label_map: dict, allow_missing_back: bool = False)
     """raw CSV 폴더(하위 폴더 포함)를 프레임 단위로 이어붙인다.
 
     - 등받이 컬럼이 없는 파일은 기본적으로 오류. 앞으로 숙이기(등받이 값 없음)와
-      거북목(등은 닿고 어깨 줄은 거의 0)은 등받이 값으로 구분되므로, 0으로 채운 가짜
+      기대기(한쪽 어깨만 닿음)는 등받이 값으로 구분되므로, 0으로 채운 가짜
       등받이를 쓰면 라벨이 의미를 잃는다. (--allow-missing-back 은 파이프라인
-      점검용이며 turtle_neck 파일에는 적용되지 않는다)
+      점검용)
     - 방석이 전부 0인 파일(등받이 보드만 연결하고 수집한 파일)은 not_sitting 이
       아니면 쓸 수 없으므로 건너뛰고 알려준다.
     - 파일 이름에 _reject 가 있으면 건너뛴다.
@@ -142,7 +142,7 @@ def from_csvdir(csv_dir: str, label_map: dict, allow_missing_back: bool = False)
         if back_cols is not None:
             back = df[back_cols].astype(np.float32)
         else:
-            if not allow_missing_back or posture == "turtle_neck":
+            if not allow_missing_back:
                 raise ValueError(
                     f"{name}: 등받이 32채널 컬럼이 없음 (back_0~31 / back_1~32 / back_ch0~31 필요). "
                     "등받이 실측 없이는 변환할 수 없다.")
@@ -168,7 +168,7 @@ def from_csvdir(csv_dir: str, label_map: dict, allow_missing_back: bool = False)
 
 
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(description="더미/실측 데이터를 chair_64ch_posture_data.csv 스키마로 변환 (8종)")
+    p = argparse.ArgumentParser(description="더미/실측 데이터를 chair_64ch_posture_data.csv 스키마로 변환 (7종)")
     p.add_argument("--source", choices=["npz", "csvdir"], required=True)
     p.add_argument("--npz", default="dummy_windows.npz")
     p.add_argument("--csv-dir", default="data/raw_back")
@@ -176,7 +176,7 @@ def main(argv=None) -> int:
     p.add_argument("--allow-missing-back", action="store_true",
                    help="등받이 컬럼이 없는 raw CSV를 0으로 채워 변환 (파이프라인 점검용)")
     p.add_argument("--label-map", default=None,
-                   help='posture=p코드 쌍을 콤마로 (예: "turtle_neck=p7") 지정하면 기본 매핑을 덮어씀')
+                   help='posture=p코드 쌍을 콤마로 (예: "lean_left=p6") 지정하면 기본 매핑을 덮어씀')
     a = p.parse_args(argv)
 
     label_map = dict(POSTURE_TO_PCODE)

@@ -1,9 +1,9 @@
-# 64ch 실측 체크리스트 (SeatCare, 8자세)
+# 64ch 실측 체크리스트 (SeatCare, 7자세)
 
 측정일: ____ / 측정자: ____ / 방석 보드 포트: ____ / 등받이 보드 포트: ____
 
-자세 라벨은 앱 순서 0~7 고정입니다 (`posture_names.py`).
-0 not_sitting · 1 sitting_straight · 2 lean_forward · 3 cross_leg_right · 4 cross_leg_left · 5 lean_right · 6 lean_left · 7 turtle_neck
+자세 라벨은 앱 순서 0~6 고정입니다 (`posture_names.py`).
+0 not_sitting · 1 sitting_straight · 2 lean_forward · 3 cross_leg_right · 4 cross_leg_left · 5 lean_right · 6 lean_left
 
 ## A. 측정 전 (1회)
 - [ ] 등받이 센서를 의자에 고정 (측정 내내 위치 변동 없게 테이프/밴드)
@@ -12,7 +12,7 @@
 - [ ] 2포트 동시 수신 확인: `python collect_back.py record --posture sitting_straight --person test --seat-port COMx --back-port COMy --seconds 5` → 저장 후 "두 보드 수신 시각 차이"가 수십 ms 이내인지, "건너뛴 시점"이 거의 0인지
 - [ ] 탭 테스트: `python collect_back.py tap --seat-port COMx --back-port COMy` 로 등받이 구역을 하나씩 눌러 채널 확인
 - [ ] 결과를 `back_channel_mapping.csv` 의 real_row / real_col / real_zone 에 기록
-- [ ] **줄 경계 확인**: 위 결과로 `collect_back.py` 의 `BACK_WAIST`/`BACK_MID`/`BACK_SHOULDER` (back_0~9 허리 / 10~23 중간 / 24~31 어깨, 팀 저장소 sensor_layout.dart 와 동일) 가 맞는지 확인하고, 다르면 수정 (거북목 자동 점검에 쓰임)
+- [ ] **줄 경계 확인**: 위 결과로 `collect_back.py` 의 `BACK_WAIST`/`BACK_MID`/`BACK_SHOULDER` (back_0~9 허리 / 10~23 중간 / 24~31 어깨, 팀 저장소 sensor_layout.dart 와 동일) 가 맞는지 확인하고, 다르면 수정 (자동 점검에 쓰임)
 - [ ] 아무도 안 앉은 상태 baseline 10초 확인 (값이 0 근처인지, 잡음 크기 기록: ____)
 - [ ] 이상 채널(항상 0 / 항상 포화 / 이웃과 같이 튐) 메모: ____
 
@@ -22,7 +22,7 @@
 - [ ] 자세 순서는 매번 섞기 (menu 모드 기본값) — 순서 효과 방지
 - [ ] 참가자 이름은 `--person` 에 영문 소문자로 일관되게 (학습 때 사람 단위 분리에 그대로 쓰임)
 
-## C. 자세별 (8종 × 3~5회)
+## C. 자세별 (7종 × 3~5회)
 각 회차: 일어났다 → 다시 앉기 → 카운트다운 → 5~10초 유지 → 기록 (menu 모드가 안내 문구를 띄워 줍니다)
 
 | 번호 | 자세 | 등받이에서 기대하는 것 | 확인 |
@@ -34,21 +34,18 @@
 | 4 | cross_leg_left | 위의 좌우 반대 | [ ] |
 | 5 | lean_right | 등받이 오른쪽 쏠림 | [ ] |
 | 6 | lean_left | 등받이 왼쪽 쏠림 | [ ] |
-| 7 | turtle_neck (거북목) | **등은 닿고(허리·중간 줄 값 있음) 어깨 줄은 거의 0**, 방석은 정자세와 비슷 | [ ] |
 
-**거북목 vs 앞으로 숙이기를 확실히 가르기**
-- 앞으로 숙이기: 상체를 숙여서 등받이에서 완전히 떨어지게 한다 (등이 조금이라도 닿으면 거북목과 헷갈림).
-- 거북목: 등은 등받이에 대고, 어깨 부분만 등받이에서 띄운 채 머리·목을 앞으로 내민다.
+**앞으로 숙이기는 확실하게**
+- 상체를 숙여서 등받이에서 완전히 떨어지게 한다 (등이 조금이라도 닿으면 정자세와 헷갈림).
 - 어중간한 자세(등이 살짝만 닿음)는 라벨이 흔들리므로 다시 찍는다.
 
 (위 "기대하는 것"은 가설입니다. 첫 참가자 데이터에서 실제로 그렇게 나오는지 먼저 확인하고,
 다르면 그대로 기록한 뒤 기준을 실측에 맞추세요. `collect_back.py` 의 자동 점검 문구도 같은 가설 기준입니다.)
 
-## D. 합격 기준 (기존 "자세별 합격 기준" xlsx 우선, 거북목은 아래 초안)
+## D. 합격 기준 (기존 "자세별 합격 기준" xlsx 우선)
 - [ ] 자세 중 몸을 움직이지 않았는가
 - [ ] 센서 포화(최댓값 고정) 채널이 많지 않은가
 - [ ] not_sitting 이 정말 0 근처인가
-- [ ] 거북목(초안): 등받이 허리·중간 줄 평균이 반응 기준(원시값 20) 초과이고, 어깨 줄 평균은 반응 기준 이하
 - [ ] 앞으로 숙이기(초안): 등받이 전체 평균이 반응 기준(원시값 20) 이하
 - 미달 파일은 삭제하지 말고 파일명에 `_reject` 를 붙여 따로 보관 (변환 때 자동으로 건너뜀)
 

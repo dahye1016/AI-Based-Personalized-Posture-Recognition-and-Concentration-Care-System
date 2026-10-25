@@ -32,7 +32,7 @@
 | p코드 | 자세 |
 |---|---|
 | p1 | 정자세 (sitting_straight) |
-| p2 | 거북목 (lean_forward) |
+| p2 | 앞으로 숙이기 (lean_forward) |
 | p3 | 오른다리꼬기 (cross_leg_right) |
 | p4 | 왼다리꼬기 (cross_leg_left) |
 | p5 | 오른쪽기대기 (lean_right) |

@@ -1,7 +1,7 @@
 """
-posture_names.py — 자세 라벨 정의 (8종) + 서버/리포트/시뮬레이터 공용 표시 이름 로더.
+posture_names.py — 자세 라벨 정의 (7종) + 서버/리포트/시뮬레이터 공용 표시 이름 로더.
 
-2026-10-15 확정 (앱 lib/models/posture_class.dart 순서와 동일):
+2026-10-25 확정 (앱 lib/models/posture_class.dart 의 canonical 7개와 같은 순서):
 
     0 p0 not_sitting       앉지 않음
     1 p1 sitting_straight  정자세
@@ -10,13 +10,12 @@ posture_names.py — 자세 라벨 정의 (8종) + 서버/리포트/시뮬레이
     4 p4 cross_leg_left    왼다리 꼬기
     5 p5 lean_right        오른쪽 기대기
     6 p6 lean_left         왼쪽 기대기
-    7 p7 turtle_neck       거북목          (등은 닿고 어깨 부분은 떠 있음)
 
-순서를 바꾸지 말 것. 학습 라벨(Label 컬럼)은 이 순서대로 p0~p7 문자열이다.
+순서를 바꾸지 말 것. 학습 라벨(Label 컬럼)은 이 순서대로 p0~p6 문자열이다.
 
-표시 이름은 학습 때 norm_stats_64ch.json 의 "label_names" 에 같이 저장된다.
+표시 이름은 학습 때 norm_stats json 의 "label_names" 에 같이 저장된다.
 서버·리포트·시뮬레이터는 그 파일을 읽어서 이름을 정하므로, 모델과 이름표가
-항상 같은 파일에서 나온다. label_names 가 없는 예전(7종) norm_stats 가 올라가
+항상 같은 파일에서 나온다. label_names 가 없는 예전 norm_stats 가 올라가
 있으면 예전 이름표(LEGACY_NAMES)를 써서, 새 모델로 교체하기 전에도 서버가
 그대로 동작한다.
 """
@@ -31,7 +30,6 @@ POSTURE_ORDER = [
     "cross_leg_left",    # 4
     "lean_right",        # 5
     "lean_left",         # 6
-    "turtle_neck",       # 7
 ]
 CODES = [f"p{i}" for i in range(len(POSTURE_ORDER))]
 POSTURE_TO_PCODE = dict(zip(POSTURE_ORDER, CODES))
@@ -44,14 +42,13 @@ KOREAN = [
     "왼다리 꼬기",
     "오른쪽 기대기",
     "왼쪽 기대기",
-    "거북목",
 ]
 NEW_NAMES = dict(zip(CODES, KOREAN))
 
-# 8종으로 바꾸기 전(7종 모델) 이름표. 새 모델로 교체하기 전까지만 쓰인다.
+# 예전 서버 모델(p1~p7, p7=앉지않음) 이름표. 새 모델로 교체하기 전까지만 쓰인다.
 LEGACY_NAMES = {
     "p1": "정자세",
-    "p2": "거북목(앞으로 숙이기)",
+    "p2": "앞으로 숙이기",
     "p3": "오른다리꼬기",
     "p4": "왼다리꼬기",
     "p5": "오른쪽기대기",

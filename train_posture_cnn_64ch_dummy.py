@@ -1,10 +1,10 @@
 """
-train_posture_cnn_64ch_dummy.py  (8종 버전, 2026-10-15)
+train_posture_cnn_64ch_dummy.py  (7종 버전, 2026-10-25)
 
 모델 구조(PostureCNN64)와 학습 루프는 원본 train_posture_cnn_64ch.py 와 같다.
-8종 라벨(p0~p7, 앱 순서)로 바뀌면서 달라진 점:
+7종 라벨(p0~p6, 앱 순서, posture_names.py)로 바뀌면서 달라진 점:
 
-  1. 클래스는 항상 8개(p0~p7)로 고정이다. 데이터에 없는 클래스가 있어도 번호가
+  1. 클래스는 항상 7개(p0~p6)로 고정이다. 데이터에 없는 클래스가 있어도 번호가
      밀리지 않는다. (예전에는 LabelEncoder 가 데이터에 있는 라벨만 정렬해서
      번호를 붙였기 때문에, 클래스가 빠지면 앱·서버와 번호가 어긋났다.)
   2. 정규화 mean/std 는 학습 데이터로만 계산한다 (테스트 데이터가 섞이지 않게).
@@ -116,11 +116,11 @@ def main():
     labels_present = sorted(df["Label"].astype(str).unique())
     unknown = [c for c in labels_present if c not in CODES]
     if unknown:
-        sys.exit(f"알 수 없는 Label 값 {unknown}. p0~p7 만 쓸 수 있습니다.")
+        sys.exit(f"알 수 없는 Label 값 {unknown}. p0~p6 만 쓸 수 있습니다.")
     if "p0" not in labels_present and not args.force:
         sys.exit("이 CSV 에는 p0(앉지 않음)이 없습니다. 예전 7종 CSV(p1~p7, p7=앉지않음)로 보입니다.\n"
-                 "8종에서는 p7 이 거북목이라 의미가 달라졌습니다. prepare_chair_data.py 로 새로 만드세요.\n"
-                 "(정말 이 CSV 가 8종 라벨이 맞다면 --force)")
+                 "지금 라벨에서는 p0 이 앉지 않음이라 번호 의미가 다릅니다. prepare_chair_data.py 로 새로 만드세요.\n"
+                 "(정말 이 CSV 가 지금 라벨이 맞다면 --force)")
 
     code_to_idx = {c: i for i, c in enumerate(CODES)}
     y = df["Label"].astype(str).map(code_to_idx).values.astype(np.int64)
