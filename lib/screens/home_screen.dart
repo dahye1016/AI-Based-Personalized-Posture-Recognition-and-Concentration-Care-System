@@ -53,6 +53,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<DateTime> _backRecvTimes = [];
   double _backFps = 0;
 
+  /// 좌석·등받이 프레임이 들어올 때마다 올린다. 압력 카드(히트맵·진단 줄)만
+  /// 이걸 듣고 다시 그린다 — 프레임마다 화면 전체를 setState 하지 않기 위함.
+  final ValueNotifier<int> _frameTick = ValueNotifier<int>(0);
+
   // 판정 입력: 좌석+등받이 병합 64ch (100ms 버킷, 한쪽이 끊기면 출력 없음)
   late final FrameMerger _merger;
   StreamSubscription<SensorFrame>? _mergedSub;
@@ -120,9 +124,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 등받이 프레임은 화면 표시용으로만 보관한다. 판정([_onMergedFrame])과 무관.
   void _onBackFrame(SensorFrame f) {
-    _backRecvTimes.add(f.receivedAt);
+    final now = f.receivedAt;
+    _backRecvTimes.add(now);
+    _backRecvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
     if (!mounted) return;
-    setState(() => _lastBackFrame = f);
+    final wasIdle = _backFps == 0;
+    _lastBackFrame = f;
+    _backFps = _backRecvTimes.length.toDouble();
+    // 0 -> 수신 시작이면 센서 칩(LIVE)도 바뀌므로 전체를 그린다. 그 밖엔 압력 카드만.
+    if (wasIdle) {
+      setState(() {});
+    } else {
+      _frameTick.value++;
+    }
   }
 
   /// TFLite 모델과 정규화 값을 읽는다.
@@ -147,10 +161,15 @@ class _HomeScreenState extends State<HomeScreen> {
     _recvTimes.add(now);
     _recvTimes.removeWhere((t) => now.difference(t).inMilliseconds > 1000);
     if (!mounted) return;
-    setState(() {
-      _lastFrame = f;
-      _fps = _recvTimes.length.toDouble();
-    });
+    final wasIdle = _fps == 0;
+    _lastFrame = f;
+    _fps = _recvTimes.length.toDouble();
+    // 0 -> 수신 시작이면 센서 칩(LIVE)도 바뀌므로 전체를 그린다. 그 밖엔 압력 카드만.
+    if (wasIdle) {
+      setState(() {});
+    } else {
+      _frameTick.value++;
+    }
   }
 
   /// 병합 64ch 프레임으로 판정한다.
@@ -160,12 +179,20 @@ class _HomeScreenState extends State<HomeScreen> {
     final prevAt = _lastMergedAt;
     _lastMergedAt = now;
     if (prevAt != null && now.difference(prevAt) > _frameGapReset) _resetBad();
-    final p = _model?.predict(f);
+    final m = _model;
+    final hadBaseline = m?.hasBaseline;
+    final prevCount = m?.baselineCount;
+    final p = m?.predict(f);
     if (p != null) SittingStats.instance.record(p, f.receivedAt);
-    // 기준값 수집 중에도 진행도 표시를 위해 다시 그린다.
-    setState(() {
-      if (p != null) _posture = p;
-    });
+    // 판정이 바뀌었거나 기준값 진행도(n/50·완료)가 바뀌었을 때만 다시 그린다.
+    final changed = (p != null && p != _posture) ||
+        m?.hasBaseline != hadBaseline ||
+        m?.baselineCount != prevCount;
+    if (changed) {
+      setState(() {
+        if (p != null) _posture = p;
+      });
+    }
     // predict 가 null 인 프레임(채널 수 불일치·모델 미로드·기준값 수집 중)은
     // 판정이 없으므로 알림 타이머를 건드리지 않는다.
     if (p != null) _trackBad(p, now);
@@ -229,6 +256,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _mergedSub?.cancel();
     _merger.dispose();
     _ble.statusListenable.removeListener(_onBleStatus);
+    _frameTick.dispose();
     _fpsTimer?.cancel();
     _model?.dispose();
     if (_ownsBle) _ble.disconnect();
@@ -500,7 +528,10 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(
                   AppSpacing.screen, 0, AppSpacing.screen, 14),
-              child: BmSoftCard(
+              // 프레임마다 이 카드만 다시 그린다 ([_frameTick]).
+              child: ValueListenableBuilder<int>(
+                valueListenable: _frameTick,
+                builder: (context, _, __) => BmSoftCard(
                 child: Column(
                   children: [
                     BmCardCaption(
@@ -543,6 +574,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildDiagnostics(),
                   ],
                 ),
+              ),
               ),
             ),
 
