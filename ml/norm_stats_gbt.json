@@ -27,9 +27,6 @@
     "p6": "왼쪽 기대기"
   },
   "num_classes": 7,
-  "dropped_postures": [
-    "turtle_neck"
-  ],
   "model_io": {
     "tflite_file": "posture_model_gbt.tflite",
     "input_shape": [
@@ -42,7 +39,7 @@
       1,
       7
     ],
-    "output": "7자세 확률 (argmax 가 label_order 인덱스). 규칙 없음. 거북목 없음",
+    "output": "7자세 확률 (argmax 가 label_order 인덱스). 규칙 없음",
     "sklearn_vs_tflite_agreement": 1.0
   },
   "raw_input": true,
@@ -70,25 +67,25 @@
   ],
   "person_split_eval": {
     "method": "leave-one-person-out (실측만, 캘리브레이션 5초 제외)",
-    "pooled_accuracy_spec": 0.9797677032596478,
-    "pooled_accuracy_all": 0.8834098675779581,
+    "pooled_accuracy_spec": 0.9666201164889813,
+    "pooled_accuracy_all": 0.8790847928235797,
     "per_class_spec": {
       "not_sitting": 0.9989290495314592,
       "sitting_straight": 0.9989842559674962,
-      "lean_forward": 0.9746937135971079,
-      "cross_leg_right": 0.9550345270595793,
-      "cross_leg_left": 0.9919678714859438,
-      "lean_right": 0.9682730923694779,
-      "lean_left": 0.9858061060524906
+      "lean_forward": 0.9658565977103836,
+      "cross_leg_right": 0.9746266259836197,
+      "cross_leg_left": 0.9217670682730924,
+      "lean_right": 0.9674698795180723,
+      "lean_left": 0.9791108730583824
     },
     "per_class_all": {
       "not_sitting": 0.9989290495314592,
-      "sitting_straight": 0.7646480534801415,
-      "lean_forward": 0.9746937135971079,
-      "cross_leg_right": 0.9550345270595793,
-      "cross_leg_left": 0.9919678714859438,
-      "lean_right": 0.7731726907630522,
-      "lean_left": 0.7393050813416349
+      "sitting_straight": 0.809673613841919,
+      "lean_forward": 0.9658565977103836,
+      "cross_leg_right": 0.9746266259836197,
+      "cross_leg_left": 0.9217670682730924,
+      "lean_right": 0.7720481927710844,
+      "lean_left": 0.7342839927696324
     }
   }
 }

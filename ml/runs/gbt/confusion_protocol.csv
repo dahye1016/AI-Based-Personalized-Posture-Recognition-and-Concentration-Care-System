@@ -1,9 +1,8 @@
-﻿,not_sitting,sitting_straight,lean_forward,cross_leg_right,cross_leg_left,lean_right,lean_left,turtle_neck
-not_sitting,3731,0,0,1,2,0,1,0
-sitting_straight,0,1967,0,0,0,2,0,0
-lean_forward,0,26,4853,17,0,67,16,0
-cross_leg_right,0,160,34,5947,0,69,17,0
-cross_leg_left,0,16,5,0,6175,29,0,0
-lean_right,0,3,46,18,12,2411,0,0
-lean_left,0,0,47,0,6,0,3681,0
-turtle_neck,0,0,0,0,0,0,0,0
+﻿,not_sitting,sitting_straight,lean_forward,cross_leg_right,cross_leg_left,lean_right,lean_left
+not_sitting,3731,0,0,1,2,0,1
+sitting_straight,0,1967,0,0,0,2,0
+lean_forward,0,67,4809,73,0,18,12
+cross_leg_right,0,47,40,6069,0,69,2
+cross_leg_left,0,1,3,0,5738,483,0
+lean_right,0,4,44,17,14,2409,2
+lean_left,0,25,46,0,6,1,3656
