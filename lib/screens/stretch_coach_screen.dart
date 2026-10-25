@@ -8,6 +8,7 @@ import '../services/stretch_log.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
 import '../widgets/pose_camera.dart';
+import '../widgets/stretch_guide.dart';
 import 'stretch_done_screen.dart';
 import 'stretch_screen.dart';
 
@@ -150,6 +151,14 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
                   child: PoseCamera(
                     onPose: _onPose,
                     detectFace: _counter?.rule.usesFace ?? false,
+                  ),
+                ),
+
+                // 목표 자세 가이드 (흐린 사람 모양) — 잘 따라 하면 민트색
+                Positioned.fill(
+                  child: StretchGuide(
+                    move: moves[_moveIndex],
+                    active: _holding,
                   ),
                 ),
 
