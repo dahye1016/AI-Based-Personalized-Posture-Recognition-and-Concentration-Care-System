@@ -67,25 +67,25 @@
   ],
   "person_split_eval": {
     "method": "leave-one-person-out (실측만, 캘리브레이션 5초 제외)",
-    "pooled_accuracy_spec": 0.9666201164889813,
-    "pooled_accuracy_all": 0.8790847928235797,
+    "pooled_accuracy_spec": 0.9568561431306529,
+    "pooled_accuracy_all": 0.8928995553591649,
     "per_class_spec": {
       "not_sitting": 0.9989290495314592,
-      "sitting_straight": 0.9989842559674962,
-      "lean_forward": 0.9658565977103836,
-      "cross_leg_right": 0.9746266259836197,
-      "cross_leg_left": 0.9217670682730924,
-      "lean_right": 0.9674698795180723,
-      "lean_left": 0.9791108730583824
+      "sitting_straight": 0.9996556473829201,
+      "lean_forward": 0.9706768427395059,
+      "cross_leg_right": 0.9604946202023447,
+      "cross_leg_left": 0.8801606425702811,
+      "lean_right": 0.9714859437751004,
+      "lean_left": 0.9750937332619175
     },
     "per_class_all": {
       "not_sitting": 0.9989290495314592,
-      "sitting_straight": 0.809673613841919,
-      "lean_forward": 0.9658565977103836,
-      "cross_leg_right": 0.9746266259836197,
-      "cross_leg_left": 0.9217670682730924,
-      "lean_right": 0.7720481927710844,
-      "lean_left": 0.7342839927696324
+      "sitting_straight": 0.9997395154988278,
+      "lean_forward": 0.9706768427395059,
+      "cross_leg_right": 0.9604946202023447,
+      "cross_leg_left": 0.8801606425702811,
+      "lean_right": 0.7749397590361445,
+      "lean_left": 0.7320747137979514
     }
   }
 }
