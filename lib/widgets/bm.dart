@@ -85,6 +85,26 @@ class BmHeader extends StatelessWidget {
   }
 }
 
+/// 공통 뒤로가기 버튼. [onTap] 이 없으면 Navigator 로 이전 화면에 돌아간다.
+class BmBackButton extends StatelessWidget {
+  const BmBackButton({super.key, this.onTap, this.color = AppColors.textPrimary});
+
+  final VoidCallback? onTap;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap ?? () => Navigator.of(context).maybePop(),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(Icons.arrow_back_rounded, color: color),
+      ),
+    );
+  }
+}
+
 /// 민트 알약 뱃지. (LIVE, STEP 1/3, 유지율 84% 등)
 class BmPill extends StatelessWidget {
   const BmPill({

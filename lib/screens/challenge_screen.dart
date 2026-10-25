@@ -10,7 +10,10 @@ import '../widgets/bm.dart';
 /// (서버는 현재 목표 30분이 하드코딩돼 있어, 코스 선택을 반영하려면
 ///  서버 쪽도 목표 시간을 파라미터로 받도록 고쳐야 한다.)
 class ChallengeScreen extends StatefulWidget {
-  const ChallengeScreen({super.key});
+  const ChallengeScreen({super.key, this.onBack});
+
+  /// 하단 탭으로 열렸을 때 '뒤로' = 실시간 탭으로. 없고 push 로 열렸으면 이전 화면으로.
+  final VoidCallback? onBack;
 
   @override
   State<ChallengeScreen> createState() => _ChallengeScreenState();
@@ -32,7 +35,10 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            BmHeader(eyebrow: '오늘의 목표 $_goal분', title: '집중 챌린지'),
+            BmHeader(
+                leading: widget.onBack != null || Navigator.of(context).canPop() ? BmBackButton(onTap: widget.onBack) : null,
+                eyebrow: '오늘의 목표 $_goal분',
+                title: '집중 챌린지'),
 
             // ── 진행 링 ──────────────────────────
             Padding(

@@ -10,7 +10,10 @@ import '../widgets/bm.dart';
 /// 방석에 실제로 앉아 있던 시간([SittingStats])만으로 만든다.
 /// 기록이 없으면 가짜 숫자 대신 '아직 기록이 없어요'를 보여준다.
 class ReportScreen extends StatefulWidget {
-  const ReportScreen({super.key});
+  const ReportScreen({super.key, this.onBack});
+
+  /// 하단 탭으로 열렸을 때 '뒤로' = 실시간 탭으로. 없고 push 로 열렸으면 이전 화면으로.
+  final VoidCallback? onBack;
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
@@ -41,6 +44,7 @@ class _ReportScreenState extends State<ReportScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 BmHeader(
+                  leading: widget.onBack != null || Navigator.of(context).canPop() ? BmBackButton(onTap: widget.onBack) : null,
                   eyebrow: '${ProfileStore.instance.displayName}님 · '
                       '${_tab == 0 ? _date(now) : '${_short(weekStart)} – ${_short(now)}'}',
                   title: _tab == 0 ? '오늘의 리포트' : '이번 주 리포트',

@@ -139,10 +139,13 @@ class _RootNavState extends State<RootNav> {
 
   late final List<Widget> _pages = [
     HomeScreen(api: _api, ble: widget.ble),
-    const ReportScreen(),
-    const ChallengeScreen(),
-    const StretchScreen(),
+    ReportScreen(onBack: _toHome),
+    ChallengeScreen(onBack: _toHome),
+    StretchScreen(onBack: _toHome),
   ];
+
+  /// 다른 탭에서 뒤로가기 = 실시간 탭으로.
+  void _toHome() => setState(() => _index = 0);
 
   @override
   void dispose() {
@@ -152,7 +155,13 @@ class _RootNavState extends State<RootNav> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    // 시스템 뒤로가기(안드로이드 버튼·제스처): 다른 탭이면 실시간 탭으로.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _index != 0) _toHome();
+      },
+      child: Scaffold(
       backgroundColor: AppColors.bg,
       body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: NavigationBar(
@@ -181,6 +190,7 @@ class _RootNavState extends State<RootNav> {
           ),
         ],
       ),
+    ),
     );
   }
 }

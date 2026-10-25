@@ -54,12 +54,16 @@ class StretchDoneScreen extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('스트레칭 완료',
+                  const BmBackButton(),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('스트레칭 완료',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                         color: AppColors.textPrimary,
                       )),
+                  ),
                   BmPill(label: '$completed / $total 동작'),
                 ],
               ),

@@ -275,6 +275,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               Navigator.of(context).maybePop();
             },
             onRetry: _start,
+            onBack: () => setState(() => _step = _Step.intro),
           ),
       },
     );
@@ -575,19 +576,20 @@ class _MeasuringView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
                 AppSpacing.screen, 12, AppSpacing.screen, 12),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('자세 측정 중',
+                BmBackButton(onTap: onCancel),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('자세 측정 중',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary,
-                    )),
-                BmPill(label: 'STEP 2 / 3'),
+                    ))),
+                const BmPill(label: 'STEP 2 / 3'),
               ],
             ),
           ),
@@ -696,11 +698,15 @@ class _DoneView extends StatelessWidget {
     required this.result,
     required this.onConfirm,
     required this.onRetry,
+    required this.onBack,
   });
 
   final CalibrationResult result;
   final VoidCallback onConfirm;
   final VoidCallback onRetry;
+
+  /// 뒤로가기 = 측정 안내 화면으로.
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -711,19 +717,20 @@ class _DoneView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
                 AppSpacing.screen, 12, AppSpacing.screen, 24),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('자세 측정 완료',
+                BmBackButton(onTap: onBack),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('자세 측정 완료',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary,
-                    )),
-                BmPill(label: 'STEP 3 / 3'),
+                    ))),
+                const BmPill(label: 'STEP 3 / 3'),
               ],
             ),
           ),
