@@ -4,6 +4,7 @@ train_posture_device.py — 지금 기기(labchair) 녹화를 넣어 다시 학�
 데이터
   - 예전 실측 27녹화 + 더미 30명 (data/train_7cls/)  — 9caf369 와 같음
   - 지금 기기 7자세 녹화 (data/test_64ch/, 2026-10-26 dahye, 커넥터 수리 후) 를 5배 가중으로 추가
+  - 그 녹화로 만든 가상 사용자 30명 더미 (ml/gen_dummy_device.py — 체중·의자(등받이·무릎)·자세 강도 변화)
   - 미착석은 학습에서 뺌. 모두 좌우 반전 + '반쯤 기댄' 자세 추가 (train_posture_corrected.py 와 같음)
 출력
   - ml/posture_model_corrected.tflite (앱이 읽는 이름 그대로), 입력 [1,128], 출력 [1,7]
@@ -22,6 +23,9 @@ sys.path.insert(0, str(ROOT / "ml"))
 EVAL = "--eval" in sys.argv
 sys.argv = sys.argv[:1]
 import train_posture_corrected as T  # noqa: E402
+import gen_dummy_device as G  # noqa: E402
+USE_DEV_DUMMY = True
+DEV_DUMMY_EVERY = 3    # 기기 더미는 3프레임마다 1개
 
 DEVICE_GLOB = str(ROOT / "data/test_64ch/*.csv")
 DEVICE_WEIGHT = 5
@@ -70,21 +74,24 @@ def train(df):
 
 def main():
     real, dum, dev = load()
+    ddum_all = [G.make(dev).iloc[::DEV_DUMMY_EVERY]] if USE_DEV_DUMMY else []
     report = {}
     if EVAL:
         tr, te = [], []
         for _, g in dev.groupby("posture"):
             k = int(len(g) * 0.6); tr.append(g.iloc[:k]); te.append(g.iloc[k + 50:])
-        m = train(pd.concat([real, dum] + [pd.concat(tr)] * DEVICE_WEIGHT))
+        trd = pd.concat(tr)
+        ddum = [G.make(trd).iloc[::DEV_DUMMY_EVERY]] if USE_DEV_DUMMY else []   # 더미도 앞 60% 로만 만듦
+        m = train(pd.concat([real, dum] + [trd] * DEVICE_WEIGHT + ddum))
         report["device_time_split"] = score(m, pd.concat(te))
         print("labchair 뒤 40% (학습 안 함):", report["device_time_split"])
         lopo = {}
         for q in sorted(real.person.unique()):
-            m = train(pd.concat([real[real.person != q], dum] + [dev] * DEVICE_WEIGHT))
+            m = train(pd.concat([real[real.person != q], dum] + [dev] * DEVICE_WEIGHT + ddum_all))
             lopo[q] = score(m, real[real.person == q]); print(q, "(학습에서 뺌):", lopo[q])
         report["old_persons_lopo"] = lopo
 
-    final = train(pd.concat([real, dum] + [dev] * DEVICE_WEIGHT))
+    final = train(pd.concat([real, dum] + [dev] * DEVICE_WEIGHT + ddum_all))
     OUT.write_bytes(tf.lite.TFLiteConverter.from_keras_model(final).convert())
 
     # TFLite 검사: Keras 와 같은지, 빈 방석 -> not_sitting, 앉음 -> not_sitting 없음
@@ -105,7 +112,8 @@ def main():
     st["model_io"]["output"] = "7칸 확률 (argmax 가 label_order 인덱스). 빈 방석(64채널 합 < 300)이면 not_sitting, 앉아 있으면 6자세 중 판정"
     st["model"] = {"type": "특징(채널 비율·전체 합·등받이 비율·등받이 좌우·무릎 좌우) -> MLP 128-64 -> softmax, 규칙 없음(빈 방석 제외)",
                    "train_data": {"old_real": "data/train_7cls/real_27.csv.gz (미착석 제외)", "dummy": "data/train_7cls/dummy_30p.csv.gz (1/5, 미착석 제외)",
-                                  "device": f"data/test_64ch (labchair, 2026-10-26 dahye) x{DEVICE_WEIGHT}", "flip": "좌우 반전 + 라벨 스왑", "partial": "반쯤 기댄 자세"},
+                                  "device": f"data/test_64ch (labchair, 2026-10-26 dahye) x{DEVICE_WEIGHT}",
+                                  "device_dummy": "ml/gen_dummy_device.py 로 labchair 녹화에서 만든 가상 30명 (체중·등받이·무릎·자세 강도 변화, 1/3 샘플)", "flip": "좌우 반전 + 라벨 스왑", "partial": "반쯤 기댄 자세"},
                    "script": "ml/train_posture_device.py"}
     st["device_eval"] = report or st.get("device_eval")
     st.pop("labchair_eval", None)
