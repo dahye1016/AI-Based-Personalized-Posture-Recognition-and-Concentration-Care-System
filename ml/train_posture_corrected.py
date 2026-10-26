@@ -15,7 +15,7 @@ train_posture_corrected.py — 7자세 64ch 모델 (정자세 보정 포함) 학
   분류  MLP 128-64 -> 7자세 확률
   규칙  없음. 대신 '반쯤 기댄' 프레임(정자세와 기대기를 섞음, 50% 이상 = 기대기)을 학습에 넣어
         좌우 모두 살짝만 기대도 기대기로 잡히게 함. (StraightCorrection 클래스는 참고용으로 남김)
-  출력  [1, 7] 확률 (label_order 순서, argmax 사용)
+  출력  [1, 7] 확률 (label_order 순서, argmax 사용). not_sitting 칸은 항상 0 (앉지 않음은 판정 안 함)
 
 실행: python ml/train_posture_corrected.py   (tensorflow, pandas, numpy 필요)
 결과: ml/posture_model_corrected.tflite, ml/norm_stats_corrected.json, ml/runs/corrected/
@@ -82,6 +82,15 @@ class StraightCorrection(tf.keras.layers.Layer):
         return tf.where(bal & lean, straight, p)
 
 
+class NoNotSitting(tf.keras.layers.Layer):
+    """출력 7칸 중 not_sitting(0번) 확률을 0 으로 만들고 나머지를 다시 합 1 로 맞춘다.
+    앱이 출력 7칸을 전제로 하므로 칸은 남겨 두고 값만 0 으로 둔다."""
+    def call(self, p):
+        m = tf.constant([[0.0, 1, 1, 1, 1, 1, 1]], dtype=p.dtype)
+        q = p * m
+        return q / tf.maximum(tf.reduce_sum(q, 1, keepdims=True), 1e-7)
+
+
 def build(seed=SEED):
     tf.keras.utils.set_random_seed(seed)
     inp = tf.keras.Input((128,), name="raw_and_baseline")
@@ -91,6 +100,7 @@ def build(seed=SEED):
     h = tf.keras.layers.Dropout(0.2)(h)
     h = tf.keras.layers.Dense(64, activation="relu")(h)
     p = tf.keras.layers.Dense(7, activation="softmax", name="probs")(h)
+    p = NoNotSitting(name="no_not_sitting")(p)   # 앉지 않음 칸은 항상 0
     train = tf.keras.Model(inp, p)
     final = train   # 정자세 보정 규칙 없음 (대충 기대도 기대기로 잡기 위해)
     train.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss="sparse_categorical_crossentropy", metrics=["accuracy"])
@@ -139,6 +149,8 @@ def fit(train_df, epochs=15):
 
 def main():
     real = pd.read_csv(REAL); dum = pd.read_csv(DUMMY).iloc[::DUMMY_EVERY]
+    # 앉지 않음은 판정하지 않는다 (학습·평가에서 제외, 출력 0번 칸은 항상 0)
+    real = real[real.posture != "not_sitting"]; dum = dum[dum.posture != "not_sitting"]
     RUNS.mkdir(parents=True, exist_ok=True)
 
     # 1) 사람 단위 평가: 한 명 빼고(실측) 학습, 그 사람으로 평가. 더미는 그 사람 없이 만든 게 아니라 참고값.
@@ -177,7 +189,7 @@ def main():
         "label_order": LABELS, "class_index": {l: k for k, l in enumerate(LABELS)}, "num_classes": 7,
         "model_io": {"tflite_file": OUT_TFLITE.name, "input_shape": [1, 128], "input_dtype": "float32",
                      "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63]. 정규화하지 말 것. 기준값은 쓰지 않으므로 0 이어도 됨",
-                     "output_shape": [1, 7], "output": "7자세 확률 (argmax 가 label_order 인덱스). 규칙 없음",
+                     "output_shape": [1, 7], "output": "7칸 확률 (argmax 가 label_order 인덱스). not_sitting(0번) 칸은 항상 0 — 앉지 않음은 판정하지 않음. 규칙 없음",
                      "keras_vs_tflite_agreement": agree},
         "raw_input": True,
         "channel_layout": "ch0~31 좌석, ch32~63 등받이",

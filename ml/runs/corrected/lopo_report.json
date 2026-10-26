@@ -3,15 +3,14 @@
   "persons": [
     {
       "person": "aro1022",
-      "acc_before_correction": 97.2,
-      "acc_after_correction": 97.2,
+      "acc_before_correction": 96.6,
+      "acc_after_correction": 96.6,
       "per_posture_after": {
-        "not_sitting": 99.9,
         "sitting_straight": 100.0,
-        "lean_forward": 92.9,
-        "cross_leg_right": 93.8,
+        "lean_forward": 92.8,
+        "cross_leg_right": 93.7,
         "cross_leg_left": 100.0,
-        "lean_right": 95.7,
+        "lean_right": 95.5,
         "lean_left": 97.9
       }
     },
@@ -20,12 +19,11 @@
       "acc_before_correction": 100.0,
       "acc_after_correction": 100.0,
       "per_posture_after": {
-        "not_sitting": 100.0,
         "sitting_straight": 100.0,
         "lean_forward": 100.0,
-        "cross_leg_right": 99.8,
+        "cross_leg_right": 100.0,
         "cross_leg_left": 100.0,
-        "lean_right": 100.0,
+        "lean_right": 99.8,
         "lean_left": 100.0
       }
     },
@@ -34,7 +32,6 @@
       "acc_before_correction": 100.0,
       "acc_after_correction": 100.0,
       "per_posture_after": {
-        "not_sitting": 100.0,
         "lean_forward": 100.0,
         "cross_leg_right": 100.0,
         "cross_leg_left": 100.0,
@@ -44,19 +41,18 @@
     },
     {
       "person": "yewon",
-      "acc_before_correction": 99.0,
-      "acc_after_correction": 99.0,
+      "acc_before_correction": 98.8,
+      "acc_after_correction": 98.8,
       "per_posture_after": {
-        "not_sitting": 100.0,
         "sitting_straight": 100.0,
         "lean_forward": 99.0,
-        "cross_leg_right": 97.9,
-        "cross_leg_left": 99.0,
-        "lean_right": 99.6,
-        "lean_left": 97.6
+        "cross_leg_right": 98.5,
+        "cross_leg_left": 99.4,
+        "lean_right": 99.7,
+        "lean_left": 96.5
       }
     }
   ],
-  "mean_before": 99.0,
-  "mean_after": 99.0
+  "mean_before": 98.9,
+  "mean_after": 98.9
 }

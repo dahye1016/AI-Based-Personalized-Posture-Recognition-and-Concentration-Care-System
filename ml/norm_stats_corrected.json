@@ -30,7 +30,7 @@
       1,
       7
     ],
-    "output": "7자세 확률 (argmax 가 label_order 인덱스). 규칙 없음",
+    "output": "7칸 확률 (argmax 가 label_order 인덱스). not_sitting(0번) 칸은 항상 0 — 앉지 않음은 판정하지 않음. 규칙 없음",
     "keras_vs_tflite_agreement": 1.0
   },
   "raw_input": true,
@@ -40,7 +40,7 @@
     "correction": "없음",
     "partial_lean": "정자세·기대기 섞은 프레임 추가: 섞은 비율 >= 0.5 이면 기대기, <= 0.25 이면 정자세 (사람·자세마다 600개)",
     "train_data": {
-      "real": "real_27.csv.gz (33716프레임, 27녹화)",
+      "real": "real_27.csv.gz (28735프레임, 27녹화)",
       "dummy": "dummy_30p.csv.gz (1/5 샘플)",
       "flip": "좌우 반전 + 라벨 스왑으로 2배"
     }
@@ -56,15 +56,14 @@
     "persons": [
       {
         "person": "aro1022",
-        "acc_before_correction": 97.2,
-        "acc_after_correction": 97.2,
+        "acc_before_correction": 96.6,
+        "acc_after_correction": 96.6,
         "per_posture_after": {
-          "not_sitting": 99.9,
           "sitting_straight": 100.0,
-          "lean_forward": 92.9,
-          "cross_leg_right": 93.8,
+          "lean_forward": 92.8,
+          "cross_leg_right": 93.7,
           "cross_leg_left": 100.0,
-          "lean_right": 95.7,
+          "lean_right": 95.5,
           "lean_left": 97.9
         }
       },
@@ -73,12 +72,11 @@
         "acc_before_correction": 100.0,
         "acc_after_correction": 100.0,
         "per_posture_after": {
-          "not_sitting": 100.0,
           "sitting_straight": 100.0,
           "lean_forward": 100.0,
-          "cross_leg_right": 99.8,
+          "cross_leg_right": 100.0,
           "cross_leg_left": 100.0,
-          "lean_right": 100.0,
+          "lean_right": 99.8,
           "lean_left": 100.0
         }
       },
@@ -87,7 +85,6 @@
         "acc_before_correction": 100.0,
         "acc_after_correction": 100.0,
         "per_posture_after": {
-          "not_sitting": 100.0,
           "lean_forward": 100.0,
           "cross_leg_right": 100.0,
           "cross_leg_left": 100.0,
@@ -97,21 +94,20 @@
       },
       {
         "person": "yewon",
-        "acc_before_correction": 99.0,
-        "acc_after_correction": 99.0,
+        "acc_before_correction": 98.8,
+        "acc_after_correction": 98.8,
         "per_posture_after": {
-          "not_sitting": 100.0,
           "sitting_straight": 100.0,
           "lean_forward": 99.0,
-          "cross_leg_right": 97.9,
-          "cross_leg_left": 99.0,
-          "lean_right": 99.6,
-          "lean_left": 97.6
+          "cross_leg_right": 98.5,
+          "cross_leg_left": 99.4,
+          "lean_right": 99.7,
+          "lean_left": 96.5
         }
       }
     ],
-    "mean_before": 99.0,
-    "mean_after": 99.0
+    "mean_before": 98.9,
+    "mean_after": 98.9
   },
-  "train_set_accuracy": 0.9993474908055523
+  "train_set_accuracy": 0.998225160953541
 }
