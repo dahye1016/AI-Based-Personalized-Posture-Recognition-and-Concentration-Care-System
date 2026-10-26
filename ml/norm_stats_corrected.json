@@ -45,8 +45,7 @@
       "flip": "좌우 반전 + 라벨 스왑",
       "partial": "반쯤 기댄 자세"
     },
-    "script": "ml/train_posture_device.py -> ml/train_posture_straight_fix.py",
-    "straight_fix": "60d0bb4 가중치에서 시작해 '정자세에 다른 자세 0~35% 섞임 = 정자세, 60% 이상 = 그 자세' 를 넣어 4 epoch 추가 학습 (ml/train_posture_straight_fix.py). 앞숙임 규칙 없음"
+    "script": "ml/train_posture_device.py"
   },
   "trained_on_persons": [
     "aro1022",
