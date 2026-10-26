@@ -30,7 +30,7 @@
       1,
       7
     ],
-    "output": "7칸 확률 (argmax 가 label_order 인덱스). not_sitting(0번) 칸은 항상 0 — 앉지 않음은 판정하지 않음. 규칙 없음",
+    "output": "7칸 확률 (argmax 가 label_order 인덱스). 64채널 합 < 300 이면 not_sitting(0번)=1 로 고정(빈 방석), 앉아 있으면 not_sitting 칸은 0 이고 6자세 중에서 판정",
     "keras_vs_tflite_agreement": 1.0
   },
   "raw_input": true,

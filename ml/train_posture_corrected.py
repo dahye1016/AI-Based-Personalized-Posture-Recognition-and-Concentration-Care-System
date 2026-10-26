@@ -15,7 +15,8 @@ train_posture_corrected.py — 7자세 64ch 모델 (정자세 보정 포함) 학
   분류  MLP 128-64 -> 7자세 확률
   규칙  없음. 대신 '반쯤 기댄' 프레임(정자세와 기대기를 섞음, 50% 이상 = 기대기)을 학습에 넣어
         좌우 모두 살짝만 기대도 기대기로 잡히게 함. (StraightCorrection 클래스는 참고용으로 남김)
-  출력  [1, 7] 확률 (label_order 순서, argmax 사용). not_sitting 칸은 항상 0 (앉지 않음은 판정 안 함)
+  출력  [1, 7] 확률 (label_order 순서, argmax 사용).
+        빈 방석(64채널 합 < 300)이면 not_sitting 으로 고정. 앉아 있으면 not_sitting 칸은 0 (6자세 중 판정)
 
 실행: python ml/train_posture_corrected.py   (tensorflow, pandas, numpy 필요)
 결과: ml/posture_model_corrected.tflite, ml/norm_stats_corrected.json, ml/runs/corrected/
@@ -91,6 +92,18 @@ class NoNotSitting(tf.keras.layers.Layer):
         return q / tf.maximum(tf.reduce_sum(q, 1, keepdims=True), 1e-7)
 
 
+EMPTY_SUM = 300.0   # 64채널 합이 이보다 작으면 빈 방석 (실측: 빈 방석 최대 23, 앉음 최소 1,145)
+
+
+class EmptySeat(tf.keras.layers.Layer):
+    """64채널 합 < EMPTY_SUM 이면 출력을 not_sitting(0번) 하나로 고정. 앉아 있으면 모델 출력 그대로."""
+    def call(self, inputs):
+        x, p = inputs
+        empty = tf.reduce_sum(x, 1, keepdims=True) < EMPTY_SUM
+        one = tf.one_hot(tf.zeros(tf.shape(x)[:1], tf.int32), 7, dtype=p.dtype)
+        return tf.where(empty, one, p)
+
+
 def build(seed=SEED):
     tf.keras.utils.set_random_seed(seed)
     inp = tf.keras.Input((128,), name="raw_and_baseline")
@@ -102,7 +115,7 @@ def build(seed=SEED):
     p = tf.keras.layers.Dense(7, activation="softmax", name="probs")(h)
     p = NoNotSitting(name="no_not_sitting")(p)   # 앉지 않음 칸은 항상 0
     train = tf.keras.Model(inp, p)
-    final = train   # 정자세 보정 규칙 없음 (대충 기대도 기대기로 잡기 위해)
+    final = tf.keras.Model(inp, EmptySeat(name="empty_seat")([x, p]))   # 빈 방석만 규칙으로 구분
     train.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss="sparse_categorical_crossentropy", metrics=["accuracy"])
     return train, final
 
@@ -189,7 +202,7 @@ def main():
         "label_order": LABELS, "class_index": {l: k for k, l in enumerate(LABELS)}, "num_classes": 7,
         "model_io": {"tflite_file": OUT_TFLITE.name, "input_shape": [1, 128], "input_dtype": "float32",
                      "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63]. 정규화하지 말 것. 기준값은 쓰지 않으므로 0 이어도 됨",
-                     "output_shape": [1, 7], "output": "7칸 확률 (argmax 가 label_order 인덱스). not_sitting(0번) 칸은 항상 0 — 앉지 않음은 판정하지 않음. 규칙 없음",
+                     "output_shape": [1, 7], "output": "7칸 확률 (argmax 가 label_order 인덱스). 64채널 합 < 300 이면 not_sitting(0번)=1 로 고정(빈 방석), 앉아 있으면 not_sitting 칸은 0 이고 6자세 중에서 판정",
                      "keras_vs_tflite_agreement": agree},
         "raw_input": True,
         "channel_layout": "ch0~31 좌석, ch32~63 등받이",
