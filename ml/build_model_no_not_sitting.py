@@ -6,7 +6,9 @@ build_model_no_not_sitting.py — 9caf369 모델을 그대로 쓰고 '앉지 않
   1) 앉아 있을 때: not_sitting(0번) 칸을 0 으로 만들고 나머지 6자세 확률을 합 1 로 다시 맞춤
      -> 앉아 있으면 6자세 중에서만 판정 (6자세 사이의 1등은 9caf369 와 같음)
   2) 빈 방석(64채널 합 < 300): 출력을 not_sitting 으로 고정
-  3) 등받이 자동 배수: 입력 뒤쪽 64칸(앱이 넣어주는 앉은 처음 5초 기준값)의 등받이 비율을 보고,
+  3) 무릎 자동 배수: 기준값의 무릎 비율(좌석 대비)이 학습 때 29% 보다 낮으면 무릎(ch24~31)을 1~3배.
+     좌석이 짧거나 방석이 뒤에 놓여 무릎이 덜 닿는 의자 대응 (labchair: 무릎 4.9% -> 숙임 0% 가 100% 로)
+  4) 등받이 자동 배수: 입력 뒤쪽 64칸(앱이 넣어주는 앉은 처음 5초 기준값)의 등받이 비율을 보고,
      학습 때 비율(16%)에 맞게 지금 프레임의 등받이(ch32~63)를 1~5배 키운 뒤 모델에 넣음.
      기준값이 0 이면(앱이 기준값을 안 넣으면) 1배 = 9caf369 와 똑같이 동작
      (실측: 빈 방석 합 최대 23, 앉았을 때 합 최소 1,145)
@@ -30,6 +32,8 @@ OUT = ROOT / "ml/posture_model_corrected.tflite"
 EMPTY_SUM = 300.0
 TARGET_BACK_SHARE = 16.0   # 학습 데이터 정자세의 등받이 비율(%)
 MAX_BACK_GAIN = 5.0
+TARGET_KNEE_SHARE = 29.0   # 학습 데이터 정자세의 무릎(ch24~31) 비율 (좌석 대비 %)
+MAX_KNEE_GAIN = 3.0        # labchair 실측(무릎 4.9%)에서 3배가 가장 좋았음
 
 
 class BackGain(tf.keras.layers.Layer):
@@ -43,7 +47,13 @@ class BackGain(tf.keras.layers.Layer):
         share = back / tf.maximum(tot, 1.0) * 100.0
         gain = tf.clip_by_value(TARGET_BACK_SHARE / tf.maximum(share, 1e-3), 1.0, MAX_BACK_GAIN)
         gain = tf.where(share >= 0.5, gain, tf.ones_like(gain))
-        return tf.concat([x[:, :32], x[:, 32:] * gain], 1)
+        # 무릎 배수: 기준값의 무릎 비율(좌석 대비)을 학습 때 29% 쪽으로 (1~3배)
+        seat = tf.reduce_sum(base[:, :32], 1, keepdims=True)
+        knee = tf.reduce_sum(base[:, 24:32], 1, keepdims=True)
+        kshare = knee / tf.maximum(seat, 1.0) * 100.0
+        kgain = tf.clip_by_value(TARGET_KNEE_SHARE / tf.maximum(kshare, 1e-3), 1.0, MAX_KNEE_GAIN)
+        kgain = tf.where(kshare >= 0.5, kgain, tf.ones_like(kgain))
+        return tf.concat([x[:, :24], x[:, 24:32] * kgain, x[:, 32:] * gain], 1)
 
 
 class SeatedOnly(tf.keras.layers.Layer):
@@ -132,6 +142,16 @@ def main():
             accs.append(((pq == yq).mean(), (pq[yq == "sitting_straight"] == "sitting_straight").mean()))
         a = np.mean(accs, 0); rows.append((f, a[0], a[1]))
         print(f"등받이 {int(f*100):3d}% + 기준값: 전체 {a[0]*100:5.1f}% / 정자세 {a[1]*100:5.1f}%")
+    # 검사 4: labchair 실측 (data/test_64ch) — 있으면 채점만 출력
+    import glob
+    fs = sorted(glob.glob(str(ROOT / "data/test_64ch/*.csv")))
+    if fs:
+        t = pd.concat([pd.read_csv(f) for f in fs]); Xt = t[T.CH].to_numpy(np.float32); yt = t.posture.to_numpy()
+        Bt = np.repeat(Xt[yt == "sitting_straight"][:250:5].mean(0, keepdims=True), len(Xt), 0)
+        it.resize_tensor_input(0, [len(Xt), 128]); it.allocate_tensors()
+        it.set_tensor(it.get_input_details()[0]["index"], np.hstack([Xt, Bt]).astype(np.float32)); it.invoke()
+        pt = L[it.get_tensor(it.get_output_details()[0]["index"]).argmax(1)]
+        print(f"labchair 실측: 전체 {(pt == yt).mean()*100:.1f}% | " + ", ".join(f"{k} {(pt[yt == k] == k).mean()*100:.0f}%" for k in T.LABELS if (yt == k).any()))
     if rows[2][2] < 0.9:
         sys.exit("⚠️ 등받이 30% 에서 정자세가 90% 미만")
 
