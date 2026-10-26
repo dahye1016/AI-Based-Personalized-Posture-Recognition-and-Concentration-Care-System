@@ -25,29 +25,26 @@
       128
     ],
     "input_dtype": "float32",
-    "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63 = 앉은 처음 5초 평균]. 정규화하지 말 것. 기준값은 등받이 자동 배수 계산에만 씀 (0 이면 배수 1)",
+    "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [기준값 ch0~63]. 정규화하지 말 것. 기준값은 쓰지 않음 (0 이어도 됨)",
     "output_shape": [
       1,
       7
     ],
-    "output": "7칸 확률 (argmax 가 label_order 인덱스). 빈 방석(64채널 합 < 300)이면 not_sitting 으로 고정, 앉아 있으면 not_sitting 칸은 0 이고 6자세 중에서 판정",
+    "output": "7칸 확률 (argmax 가 label_order 인덱스). 빈 방석(64채널 합 < 300)이면 not_sitting, 앉아 있으면 6자세 중 판정",
     "keras_vs_tflite_agreement": 1.0
   },
   "raw_input": true,
   "channel_layout": "ch0~31 좌석, ch32~63 등받이",
   "model": {
-    "type": "특징(채널 비율 64 + log 합 + 등받이 비율·등받이 왼쪽 비율·오른 무릎 비율) -> MLP 128-64 -> softmax",
-    "correction": "없음",
-    "partial_lean": "정자세·기대기 섞은 프레임 추가: 섞은 비율 >= 0.5 이면 기대기, <= 0.25 이면 정자세 (사람·자세마다 600개)",
+    "type": "특징(채널 비율·전체 합·등받이 비율·등받이 좌우·무릎 좌우) -> MLP 128-64 -> softmax, 규칙 없음(빈 방석 제외)",
     "train_data": {
-      "real": "real_27.csv.gz (33716프레임, 27녹화)",
-      "dummy": "dummy_30p.csv.gz (1/5 샘플)",
-      "flip": "좌우 반전 + 라벨 스왑으로 2배"
+      "old_real": "data/train_7cls/real_27.csv.gz (미착석 제외)",
+      "dummy": "data/train_7cls/dummy_30p.csv.gz (1/5, 미착석 제외)",
+      "device": "data/test_64ch (labchair, 2026-10-26 dahye) x5",
+      "flip": "좌우 반전 + 라벨 스왑",
+      "partial": "반쯤 기댄 자세"
     },
-    "base": "9caf369 모델 가중치를 그대로 사용 (재학습 없음). ml/build_model_no_not_sitting.py 로 출력 뒤에 '앉지 않음' 처리만 추가",
-    "seated_only": "앉아 있을 때 6자세 사이의 1등은 9caf369 와 100% 같음. 빈 방석 기준: 64채널 합 < 300 (실측 빈 방석 최대 23, 앉음 최소 1,145)",
-    "back_gain": "기준값의 등받이 비율을 학습 때 비율 16% 에 맞춰 지금 프레임의 등받이(ch32~63)를 1~5배 키움. 학습 데이터 등받이를 20~30% 로 줄인 시험에서 정자세 100%, 전체 99.9%",
-    "knee_gain": "기준값의 무릎 비율(좌석 대비)을 학습 때 29% 쪽으로, 무릎(ch24~31)을 1~3배. labchair 실측(무릎 4.9%): 숙임 0%->100%, 오른쪽 기댐 74%->97%, 전체 53.4%->71.0%"
+    "script": "ml/train_posture_device.py"
   },
   "trained_on_persons": [
     "aro1022",
@@ -118,12 +115,62 @@
     "mean_after": 99.0
   },
   "train_set_accuracy": 0.9993474908055523,
-  "labchair_eval": {
-    "data": "data/test_64ch (2026-10-26 dahye, 커넥터 수리 후)",
-    "accuracy": 0.71,
-    "남은 문제": {
-      "sitting_straight": "0% (오른쪽 기댐) — 이 녹화는 등받이 왼쪽이 0%: 등이 매트 오른쪽에만 닿음",
-      "lean_left": "0% (왼다리 꼬기) — 기대면서 왼 무릎이 들려 왼다리 꼬기와 같은 모양"
+  "device_eval": {
+    "device_time_split": [
+      100.0,
+      {
+        "sitting_straight": 100.0,
+        "lean_forward": 100.0,
+        "cross_leg_right": 100.0,
+        "cross_leg_left": 100.0,
+        "lean_right": 100.0,
+        "lean_left": 100.0
+      }
+    ],
+    "old_persons_lopo": {
+      "aro1022": [
+        95.9,
+        {
+          "sitting_straight": 96.1,
+          "lean_forward": 92.9,
+          "cross_leg_right": 93.7,
+          "cross_leg_left": 100.0,
+          "lean_right": 94.8,
+          "lean_left": 97.9
+        }
+      ],
+      "dahye": [
+        100.0,
+        {
+          "sitting_straight": 100.0,
+          "lean_forward": 100.0,
+          "cross_leg_right": 99.8,
+          "cross_leg_left": 100.0,
+          "lean_right": 100.0,
+          "lean_left": 100.0
+        }
+      ],
+      "junseo": [
+        100.0,
+        {
+          "lean_forward": 100.0,
+          "cross_leg_right": 100.0,
+          "cross_leg_left": 100.0,
+          "lean_right": 100.0,
+          "lean_left": 100.0
+        }
+      ],
+      "yewon": [
+        98.8,
+        {
+          "sitting_straight": 100.0,
+          "lean_forward": 99.1,
+          "cross_leg_right": 99.0,
+          "cross_leg_left": 98.7,
+          "lean_right": 99.2,
+          "lean_left": 96.5
+        }
+      ]
     }
   }
 }
