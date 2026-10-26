@@ -29,12 +29,13 @@ KO = {"not_sitting": "앉지않음", "sitting_straight": "정자세", "lean_forw
 BACK_L = list(range(37, 42)) + list(range(49, 56)) + list(range(60, 64))
 BACK_R = list(range(32, 37)) + list(range(42, 49)) + list(range(56, 60))
 EMPTY_SUM = 300.0
+FORWARD_BACK_SHARE = 0.015   # 앉아 있는데 등받이 비율이 이보다 작으면 앞숙임 (add_forward_guard.py 와 같음)
 
 W = np.load(os.path.join(os.path.dirname(os.path.abspath(__file__)), "posture_model_corrected_weights.npz"))
 
 
 def predict(x):
-    """tflite 와 같은 계산 (Features -> Dense128 -> Dense64 -> softmax -> SeatedOnly)."""
+    """tflite 와 같은 계산 (Features -> Dense128 -> Dense64 -> softmax -> 앉음 판정 -> 등받이 안 닿으면 앞숙임)."""
     x = np.asarray(x, np.float32)
     t = x.sum()
     if t < EMPTY_SUM:
@@ -45,7 +46,10 @@ def predict(x):
     h = np.maximum(W["W1"] @ f + W["b1"], 0)
     h = np.maximum(W["W2"] @ h + W["b2"], 0)
     z = W["W3"] @ h + W["b3"]; p = np.exp(z - z.max()); p /= p.sum()
-    p[0] = 0; return p / p.sum()
+    p[0] = 0; p /= p.sum()
+    if b / max(t, 1) < FORWARD_BACK_SHARE:
+        p = np.zeros(7, np.float32); p[2] = 1
+    return p
 
 
 def parse(line):
