@@ -6,9 +6,12 @@ build_model_no_not_sitting.py — 9caf369 모델을 그대로 쓰고 '앉지 않
   1) 앉아 있을 때: not_sitting(0번) 칸을 0 으로 만들고 나머지 6자세 확률을 합 1 로 다시 맞춤
      -> 앉아 있으면 6자세 중에서만 판정 (6자세 사이의 1등은 9caf369 와 같음)
   2) 빈 방석(64채널 합 < 300): 출력을 not_sitting 으로 고정
+  3) 등받이 자동 배수: 입력 뒤쪽 64칸(앱이 넣어주는 앉은 처음 5초 기준값)의 등받이 비율을 보고,
+     학습 때 비율(16%)에 맞게 지금 프레임의 등받이(ch32~63)를 1~5배 키운 뒤 모델에 넣음.
+     기준값이 0 이면(앱이 기준값을 안 넣으면) 1배 = 9caf369 와 똑같이 동작
      (실측: 빈 방석 합 최대 23, 앉았을 때 합 최소 1,145)
 
-입출력은 그대로: 입력 [1,128] (원시 64 + 기준값 64, 기준값은 안 씀), 출력 [1,7] (label_order 순서)
+입출력은 그대로: 입력 [1,128] (원시 64 + 기준값 64, 기준값은 등받이 배수 계산에만 씀), 출력 [1,7] (label_order 순서)
 결과: ml/posture_model_corrected.tflite (덮어씀)
 실행: python ml/build_model_no_not_sitting.py
 """
@@ -25,6 +28,22 @@ import train_posture_corrected as T  # noqa: E402  (Features 층·채널 정의�
 BASE = ROOT / "ml/runs/corrected/base_9caf369.tflite"
 OUT = ROOT / "ml/posture_model_corrected.tflite"
 EMPTY_SUM = 300.0
+TARGET_BACK_SHARE = 16.0   # 학습 데이터 정자세의 등받이 비율(%)
+MAX_BACK_GAIN = 5.0
+
+
+class BackGain(tf.keras.layers.Layer):
+    """기준값(앉은 처음 5초 평균, 입력 뒤쪽 64칸)의 등받이 비율을 보고 지금 프레임의 등받이(ch32~63)를 키운다.
+    배수 = TARGET_BACK_SHARE / 기준값 등받이 비율, 1~MAX_BACK_GAIN 로 제한.
+    기준값이 없거나(합 0) 등받이를 거의 안 댄 기준값(0.5% 미만)이면 1배."""
+    def call(self, inp):
+        x, base = inp[:, :64], inp[:, 64:]
+        tot = tf.reduce_sum(base, 1, keepdims=True)
+        back = tf.reduce_sum(base[:, 32:], 1, keepdims=True)
+        share = back / tf.maximum(tot, 1.0) * 100.0
+        gain = tf.clip_by_value(TARGET_BACK_SHARE / tf.maximum(share, 1e-3), 1.0, MAX_BACK_GAIN)
+        gain = tf.where(share >= 0.5, gain, tf.ones_like(gain))
+        return tf.concat([x[:, :32], x[:, 32:] * gain], 1)
 
 
 class SeatedOnly(tf.keras.layers.Layer):
@@ -58,7 +77,8 @@ def base_weights():
 
 def main():
     inp = tf.keras.Input((128,), name="raw_and_baseline")
-    x = inp[:, :64]
+    x_raw = inp[:, :64]
+    x = BackGain(name="back_gain")(inp)          # 등받이 자동 배수 (기준값 사용)
     h = T.Features()(x)
     d1 = tf.keras.layers.Dense(128, activation="relu"); d2 = tf.keras.layers.Dense(64, activation="relu")
     d3 = tf.keras.layers.Dense(7, activation="softmax")
@@ -66,7 +86,7 @@ def main():
     W = base_weights()
     d1.set_weights(W[0:2]); d2.set_weights(W[2:4]); d3.set_weights(W[4:6])
     base_like = tf.keras.Model(inp, p)
-    final = tf.keras.Model(inp, SeatedOnly(name="seated_only")([x, p]))
+    final = tf.keras.Model(inp, SeatedOnly(name="seated_only")([x_raw, p]))
 
     # 검사 1: 옮긴 가중치가 9caf369 와 같은 확률을 내는지
     import pandas as pd
@@ -95,6 +115,25 @@ def main():
     print(f"저장: {OUT.name} ({OUT.stat().st_size/1e3:.0f}KB)")
     if same < 0.9999 or empty_ok < 1 or ns_seated:
         sys.exit("⚠️ 검사 실패")
+
+    # 검사 3: 등받이가 약한 의자 흉내 — 등받이를 줄이고 기준값(정자세 처음 50프레임)을 같이 넣었을 때
+    import pandas as pd  # noqa
+    L = np.array(T.LABELS); rows = []
+    for f in (1.0, 0.5, 0.3, 0.2):
+        accs = []
+        for q, d in real.groupby("person"):
+            Xq = d[T.CH].to_numpy(np.float32).copy(); yq = d.posture.to_numpy()
+            if not (yq == "sitting_straight").any(): continue
+            Xq[:, 32:] *= f; Xq = np.rint(Xq); Xq[Xq < 20] = 0
+            B = np.repeat(Xq[yq == "sitting_straight"][:50].mean(0, keepdims=True), len(Xq), 0)
+            it.resize_tensor_input(0, [len(Xq), 128]); it.allocate_tensors()
+            it.set_tensor(it.get_input_details()[0]["index"], np.hstack([Xq, B]).astype(np.float32)); it.invoke()
+            pq = L[it.get_tensor(it.get_output_details()[0]["index"]).argmax(1)]
+            accs.append(((pq == yq).mean(), (pq[yq == "sitting_straight"] == "sitting_straight").mean()))
+        a = np.mean(accs, 0); rows.append((f, a[0], a[1]))
+        print(f"등받이 {int(f*100):3d}% + 기준값: 전체 {a[0]*100:5.1f}% / 정자세 {a[1]*100:5.1f}%")
+    if rows[2][2] < 0.9:
+        sys.exit("⚠️ 등받이 30% 에서 정자세가 90% 미만")
 
 
 if __name__ == "__main__":
