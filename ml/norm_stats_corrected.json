@@ -30,7 +30,7 @@
       1,
       7
     ],
-    "output": "7칸 확률 (argmax 가 label_order 인덱스). 빈 방석(64채널 합 < 300)이면 not_sitting, 앉아 있는데 등받이 비율 < 1.5% 이면 lean_forward, 나머지는 6자세 중 판정",
+    "output": "7칸 확률 (argmax 가 label_order 인덱스). 빈 방석(64채널 합 < 300)이면 not_sitting, 앉아 있으면 6자세 중 판정",
     "keras_vs_tflite_agreement": 1.0
   },
   "raw_input": true,
@@ -45,8 +45,8 @@
       "flip": "좌우 반전 + 라벨 스왑",
       "partial": "반쯤 기댄 자세"
     },
-    "script": "ml/train_posture_device.py",
-    "forward_guard": "등받이 합/전체 합 < 1.5% 이면 lean_forward (ml/add_forward_guard.py, 가중치는 60d0bb4 그대로)"
+    "script": "ml/train_posture_device.py -> ml/train_posture_straight_fix.py",
+    "straight_fix": "60d0bb4 가중치에서 시작해 '정자세에 다른 자세 0~35% 섞임 = 정자세, 60% 이상 = 그 자세' 를 넣어 4 epoch 추가 학습 (ml/train_posture_straight_fix.py). 앞숙임 규칙 없음"
   },
   "trained_on_persons": [
     "aro1022",
