@@ -6,6 +6,7 @@ import '../models/sensor_layout.dart';
 import '../services/ble_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
+import '../services/target_posture.dart';
 
 /// 정자세 측정(캘리브레이션) — 피그마 「01 측정 안내 / 02 측정 중 / 03 측정 완료」.
 ///
@@ -66,6 +67,29 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   late List<double> _sum;
   int _frames = 0;
   int _unstable = 0;
+
+  /// 기준값에서 뺀 프레임 수 (앉지 않음·센서 끊김).
+  int _skipped = 0;
+
+  /// 지금 프레임이 센서 끊김(좌석 한쪽 절반 0)인지. 측정 화면 안내용.
+  bool _faultNow = false;
+
+  /// 마지막으로 좌석·등받이 프레임을 받은 시각 (연결 끊김 안내용).
+  DateTime? _lastSeatAt;
+  DateTime? _lastBackAt;
+
+  /// 측정 화면 안내: 좌석 → 등받이 순으로 문제를 알려준다. 문제가 없으면 null.
+  String? get _linkWarning {
+    final now = DateTime.now();
+    const limit = Duration(seconds: 8);
+    // 아직 한 번도 못 받았으면 측정 시작부터 8초가 지났을 때만 경고한다.
+    bool stale(DateTime? t) => t == null
+        ? (_watch?.elapsed ?? Duration.zero) > limit
+        : now.difference(t) > limit;
+    if (_faultNow || stale(_lastSeatAt)) return '!  좌석 연결 확인';
+    if (stale(_lastBackAt)) return '!  등받이 연결 확인';
+    return null;
+  }
   double? _baseTotal;
   final List<double> _warmup = [];
 
@@ -106,6 +130,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _backFrames = 0;
     _frames = 0;
     _unstable = 0;
+    _skipped = 0;
     _baseTotal = null;
     _warmup.clear();
     _stable = true;
@@ -130,6 +155,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   /// 등받이 32채널을 0~1 로 정규화해 화면에만 반영한다.
   void _onBackFrame(List<int> ch) {
     if (_step != _Step.measuring) return;
+    _lastBackAt = DateTime.now();
     var maxV = 1;
     for (final v in ch) {
       if (v > maxV) maxV = v;
@@ -145,7 +171,36 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
   void _onFrame(List<int> ch) {
     if (_step != _Step.measuring) return;
+    _lastSeatAt = DateTime.now();
 
+    // 기준값에서 뺄 프레임 (터미널 ml/app_judge_demo.py 와 같은 기준):
+    // 앉은 값이 너무 작거나(좌석 합 < 300) 좌석 한쪽 절반이 통째로 0(센서 끊김).
+    if (ch.length >= SensorLayout.nChannels) {
+      var seatSum = 0;
+      for (var i = 0; i < SensorLayout.nChannels; i++) {
+        seatSum += ch[i];
+      }
+      if (seatSum < TargetPostureJudge.emptySum ||
+          TargetPostureJudge.halfFault(ch)) {
+        _skipped++;
+        _faultNow = TargetPostureJudge.halfFault(ch);
+        // 기준값에는 안 넣지만 화면 히트맵은 계속 보여준다 (측정이 멈춘 것처럼 보이지 않게).
+        var mx = 1;
+        for (final i in _seatCh) {
+          if (ch[i] > mx) mx = ch[i];
+        }
+        final lv = List<double>.filled(SensorLayout.nChannels, 0);
+        for (final i in _seatCh) {
+          lv[i] = (ch[i] / mx).clamp(0.0, 1.0);
+        }
+        if (mounted) setState(() => _levels = lv);
+        debugPrint('[CALIB] 기준에서 뺀 프레임 $_skipped (좌석 합 $seatSum'
+            '${TargetPostureJudge.halfFault(ch) ? ', 한쪽 절반 0' : ''})');
+        return;
+      }
+    }
+
+    _faultNow = false;
     var total = 0.0;
     final levels = List<double>.filled(SensorLayout.nChannels, 0);
 
@@ -187,11 +242,35 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
 
     final unstableRatio = _frames == 0 ? 1.0 : _unstable / _frames;
     if (_frames < _minFrames) {
-      _fail('센서 신호를 거의 못 받았어요.\n방석 전원과 블루투스를 확인해 주세요.');
+      _fail(_skipped > 0
+          ? '좌석 연결 확인'
+          : '센서 신호를 거의 못 받았어요.\n방석 전원과 블루투스를 확인해 주세요.');
       return;
     }
     if (unstableRatio > _maxUnstableRatio) {
       _fail('자세가 많이 흔들렸어요.\n편하게 앉은 채로 다시 한 번 재볼까요?');
+      return;
+    }
+
+    // 좌우 균형: 기준 정자세가 한쪽으로 쏠려 있으면 그쪽 기대기를 못 잡는다 (10/27).
+    var lSum = 0.0, tSum = 0.0;
+    for (var i = 0; i < SensorLayout.nChannels; i++) {
+      final v = _sum[i] / _frames;
+      tSum += v;
+      if (SensorLayout.leftCh.contains(i)) lSum += v;
+    }
+    final lr = tSum > 0 ? lSum / tSum : 0.5;
+    var bSum = 0.0;
+    if (_backFrames > 0) {
+      for (final v in _backSum) {
+        bSum += v / _backFrames;
+      }
+    }
+    debugPrint('[CALIB] 정자세 등받이 합 ${bSum.toStringAsFixed(0)} '
+        '${bSum >= 300 ? '(앞으로 숙이기 판정 켜짐)' : '(300 미만 → 등을 등받이에 붙이고 재면 앞으로 숙이기를 잡아요)'}');
+    debugPrint('[CALIB] 정자세 좌우 비율 왼쪽 ${(lr * 100).toStringAsFixed(0)}% / 오른쪽 ${((1 - lr) * 100).toStringAsFixed(0)}%');
+    if (lr > 0.60 || lr < 0.40) {
+      _fail('${lr > 0.5 ? '왼쪽' : '오른쪽'}으로 쏠려 있어요 (${(lr * 100).toStringAsFixed(0)} : ${((1 - lr) * 100).toStringAsFixed(0)}).\n엉덩이 무게를 좌우 똑같이 두고 다시 재주세요.');
       return;
     }
 
@@ -278,6 +357,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
             remaining: _remaining,
             ratio: _ratio,
             stable: _stable,
+            warning: _linkWarning,
             levels: _levels,
             backLevels: _backLevels,
             onCancel: () {
@@ -562,6 +642,7 @@ class _MeasuringView extends StatelessWidget {
     required this.remaining,
     required this.ratio,
     required this.stable,
+    this.warning,
     required this.levels,
     required this.backLevels,
     required this.onCancel,
@@ -570,6 +651,9 @@ class _MeasuringView extends StatelessWidget {
   final Duration remaining;
   final double ratio;
   final bool stable;
+
+  /// 연결 문제 안내 ('!  좌석 연결 확인' / '!  등받이 연결 확인'). 없으면 null.
+  final String? warning;
 
   /// 좌석 ch0~31 (0~1).
   final List<double> levels;
@@ -674,9 +758,14 @@ class _MeasuringView extends StatelessWidget {
           const SizedBox(height: 20),
           Center(
             child: BmPill(
-              label: stable ? '✓  자세가 안정적이에요' : '!  조금 흔들리고 있어요',
-              color: stable ? AppColors.primary : AppColors.warnIcon,
-              bg: stable ? AppColors.primarySoft : AppColors.warnBg,
+              label: warning ??
+                  (stable ? '✓  자세가 안정적이에요' : '!  조금 흔들리고 있어요'),
+              color: (stable && warning == null)
+                  ? AppColors.primary
+                  : AppColors.warnIcon,
+              bg: (stable && warning == null)
+                  ? AppColors.primarySoft
+                  : AppColors.warnBg,
             ),
           ),
           const SizedBox(height: 20),

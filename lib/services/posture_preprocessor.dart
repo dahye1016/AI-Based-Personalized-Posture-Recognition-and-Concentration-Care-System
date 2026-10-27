@@ -91,12 +91,12 @@ class PosturePreprocessor {
 ///
 /// 앉아 있는 프레임(좌석 ch0~31 합 >= [seatMin])만 [frames] 개 모아 채널별 평균을 낸다.
 /// 기본 50 프레임 = 병합 프레임 10Hz 에서 5초 (학습의 캘리브레이션 5초와 같은 길이).
-/// [seatMin] 6000 은 팀 자세 정의(gen_dummy_spec.py SEAT_MIN)의 '앉아 있음' 기준.
+/// [seatMin] 1500: 매트 압력이 낮아 팀 기준(gen_dummy_spec.py SEAT_MIN 6000)에서 낮춤.
 /// 앉지 않은 프레임은 세지 않고 건너뛴다 — 빈 의자가 기준값이 되는 것을 막는다.
 class BaselineCollector {
   BaselineCollector({
     this.frames = 50,
-    this.seatMin = 6000,
+    this.seatMin = 1500,
     this.channelCount = 64,
   });
 
@@ -135,7 +135,7 @@ class BaselineCollector {
 }
 
 /// 최근 [window] 개 판정 중 가장 많은 값을 돌려줘서 화면이 깜빡이지 않게 한다.
-/// 창 크기는 [PostureModel.load] 의 smoothWindow 로 주입된다 (기본 5 = BLE Notify 10Hz 에서 0.5초).
+/// 창 크기는 [PostureModel.load] 의 smoothWindow 로 주입된다 (기본 20 = BLE Notify 10Hz 에서 2초).
 /// 시리얼 수집(50fps)처럼 프레임이 빠른 경로에서는 25 를 넘겨야 같은 0.5초가 된다.
 class MajoritySmoother {
   MajoritySmoother({this.window = 25});

@@ -16,7 +16,7 @@ posture 는 숫자가 아니라 문자열로 받는다. 클래스 번호 체계�
 
 64채널 (좌석 + 등받이 보드 2대 동시 수집):
     python collect_data.py --person yewon --posture sitting_straight --trial 1 \\
-        --port /dev/cu.usbmodem5C843561931 --port-back /dev/cu.usbmodem5C843561121
+        --port /dev/cu.usbmodem5C843561121 --port-back /dev/cu.usbmodem5C843561931
 
     좌석 ch0~31, 등받이 ch32~63 을 한 행으로 합쳐 data/raw_64ch/ 에 저장한다.
     (data/raw/ 는 32ch 전용 — 전처리·증강이 폴더째 읽으므로 섞지 않는다.)

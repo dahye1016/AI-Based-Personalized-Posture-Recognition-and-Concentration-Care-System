@@ -25,25 +25,27 @@
       128
     ],
     "input_dtype": "float32",
-    "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [캘리브레이션 기준값 ch0~63]. 정규화하지 말 것. 기준값은 쓰지 않으므로 0 이어도 됨",
+    "input_layout": "값 128개 = [지금 프레임 원시값 ch0~63] + [기준값 ch0~63]. 정규화하지 말 것. 기준값은 쓰지 않음 (0 이어도 됨)",
     "output_shape": [
       1,
       7
     ],
-    "output": "7자세 확률 (argmax 가 label_order 인덱스). 규칙 없음",
+    "output": "7칸 확률 (argmax 가 label_order 인덱스). 빈 방석(64채널 합 < 300)이면 not_sitting, 앉아 있으면 6자세 중 판정",
     "keras_vs_tflite_agreement": 1.0
   },
   "raw_input": true,
   "channel_layout": "ch0~31 좌석, ch32~63 등받이",
   "model": {
-    "type": "특징(채널 비율 64 + log 합 + 등받이 비율·등받이 왼쪽 비율·오른 무릎 비율) -> MLP 128-64 -> softmax",
-    "correction": "없음",
-    "partial_lean": "정자세·기대기 섞은 프레임 추가: 섞은 비율 >= 0.5 이면 기대기, <= 0.25 이면 정자세 (사람·자세마다 600개)",
+    "type": "특징(채널 비율·전체 합·등받이 비율·등받이 좌우·무릎 좌우) -> MLP 128-64 -> softmax, 규칙 없음(빈 방석 제외)",
     "train_data": {
-      "real": "real_27.csv.gz (33716프레임, 27녹화)",
-      "dummy": "dummy_30p.csv.gz (1/5 샘플)",
-      "flip": "좌우 반전 + 라벨 스왑으로 2배"
-    }
+      "old_real": "data/train_7cls/real_27.csv.gz (미착석 제외)",
+      "dummy": "data/train_7cls/dummy_30p.csv.gz (1/5, 미착석 제외)",
+      "device": "data/test_64ch labchair: 다혜 6자세(정자세는 8d14eeb 수리 후 녹화) + 아로 rec7 7자세, 사람별 자세당 약 5000프레임이 되게 반복",
+      "device_dummy": "gen_dummy_device.py 로 사람마다 가상 15명",
+      "flip": "좌우 반전 + 라벨 스왑",
+      "partial": "반쯤 기댄 자세"
+    },
+    "script": "ml/train_posture_2p.py"
   },
   "trained_on_persons": [
     "aro1022",
@@ -113,5 +115,59 @@
     "mean_before": 99.0,
     "mean_after": 99.0
   },
-  "train_set_accuracy": 0.9993474908055523
+  "train_set_accuracy": 0.9993474908055523,
+  "device_eval": {
+    "dev_aro_빼고학습": [
+      42.1,
+      {
+        "sitting_straight": 4.7,
+        "lean_forward": 0.7,
+        "cross_leg_right": 88.9,
+        "cross_leg_left": 85.3,
+        "lean_right": 26.4,
+        "lean_left": 37.1
+      }
+    ],
+    "dev_dahye_빼고학습": [
+      44.4,
+      {
+        "sitting_straight": 54.7,
+        "lean_forward": 0.4,
+        "cross_leg_right": 52.5,
+        "cross_leg_left": 78.3,
+        "lean_right": 73.8,
+        "lean_left": 6.5
+      }
+    ],
+    "학습포함_기기": {
+      "dev_aro": [
+        93.4,
+        {
+          "sitting_straight": 90.7,
+          "lean_forward": 100.0,
+          "cross_leg_right": 94.4,
+          "cross_leg_left": 95.1,
+          "lean_right": 79.9,
+          "lean_left": 100.0
+        }
+      ],
+      "dev_dahye": [
+        100.0,
+        {
+          "sitting_straight": 100.0,
+          "lean_forward": 100.0,
+          "cross_leg_right": 100.0,
+          "cross_leg_left": 100.0,
+          "lean_right": 100.0,
+          "lean_left": 100.0
+        }
+      ]
+    },
+    "학습포함_예전4명": {
+      "aro1022": 99.3,
+      "dahye": 100.0,
+      "junseo": 100.0,
+      "yewon": 99.8
+    }
+  }
 }

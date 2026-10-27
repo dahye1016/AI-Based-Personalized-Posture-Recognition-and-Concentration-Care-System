@@ -13,6 +13,7 @@ import '../services/alert_store.dart';
 import '../services/frame_merger.dart';
 import '../services/posture_model.dart';
 import '../services/sitting_stats.dart';
+import '../services/target_posture.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bm.dart';
 import 'calibration_screen.dart';
@@ -23,8 +24,15 @@ import 'settings_screen.dart';
 import 'stretch_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.api, this.ble});
+  const HomeScreen(
+      {super.key, required this.api, this.ble, this.onBack, this.calibration});
   final ApiService api;
+
+  /// 처음 정자세 측정 결과. 있으면 이 자세를 목표로 판정한다 ([TargetPostureJudge]).
+  final CalibrationResult? calibration;
+
+  /// 헤더 뒤로가기 (로그인 화면으로). null 이면 버튼을 숨긴다.
+  final VoidCallback? onBack;
 
   /// 앱 전체가 공유하는 센서 연결. null 이면 이 화면이 직접 만들고 닫을 때 끊는다.
   final BleService? ble;
@@ -67,6 +75,17 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── 온디바이스 자세 판정 (assets/model 의 TFLite) ────────────────
   /// 모델 로드 전에는 null. 로드 실패하면 계속 null 이고 [_modelError] 에 원인이 담긴다.
   PostureModel? _model;
+
+  /// 목표 자세(정자세 측정값) 기준 판정. null 이면 학습 모델 판정만 쓴다.
+  late TargetPostureJudge? _judge =
+      TargetPostureJudge.usable(widget.calibration?.channelMean)
+          ? TargetPostureJudge(widget.calibration!.channelMean,
+              backMean: widget.calibration!.backMean)
+          : null;
+
+  /// 지금 쓰는 정자세 기준 번호 (처음 측정 = #1, 재측정할 때마다 +1) 와 적용 시각.
+  late int _baseNo = _judge == null ? 0 : 1;
+  DateTime? _baseAt = DateTime.now();
 
   /// 다수결로 안정화된 최신 판정. 아직 없으면 null (= 대기 중).
   PostureClass? _posture;
@@ -138,7 +157,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final back = _lastBackFrame?.channels;
     final all32 = List<int>.generate(32, (i) => i);
     const b0 = SensorLayout.backFirstCh;
-    debugPrint('[PRESSURE] '
+    final t = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    debugPrint('[PRESSURE] ${two(t.hour)}:${two(t.minute)}:${two(t.second)} '
         '좌석 합 ${seat == null ? '-' : sum(seat, all32)} '
         '(엉덩이 ${sum(seat, SensorLayout.hipCh)} 허벅지 ${sum(seat, SensorLayout.thighCh)} '
         '무릎 ${sum(seat, SensorLayout.kneeCh)} | 좌 ${sum(seat, SensorLayout.leftCh)} '
@@ -147,7 +168,8 @@ class _HomeScreenState extends State<HomeScreen> {
         '(허리 ${sum(back, SensorLayout.backWaistCh, b0)} 등 ${sum(back, SensorLayout.backMidCh, b0)} '
         '어깨 ${sum(back, SensorLayout.backShoulderCh, b0)}) · '
         'fps ${_fps.toStringAsFixed(0)}/${_backFps.toStringAsFixed(0)} · '
-        '판정 ${_posture?.label ?? '-'}');
+        '판정 ${_posture?.label ?? '-'} · '
+        '목표판정 ${_judge == null ? '꺼짐(측정값 없음 → 모델만)' : '켜짐 기준 #$_baseNo(${_baseAt == null ? '-' : '${two(_baseAt!.hour)}:${two(_baseAt!.minute)}:${two(_baseAt!.second)}'}) 점수 ${_judge!.lastScore.toStringAsFixed(0)} 등받이 ${_judge!.lastBack.toStringAsFixed(0)}/${_judge!.baseBack.toStringAsFixed(0)}${_judge!.usesBack ? '' : '(정자세때 안닿음→숙임 규칙 꺼짐)'} 좌우변화 ${_judge!.lastDlr >= 0 ? '+' : ''}${_judge!.lastDlr.toStringAsFixed(2)}${_judge!.lastFault ? ' ⚠센서 끊김' : ''}'}');
   }
 
   void _onBleStatus() {
@@ -214,7 +236,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final m = _model;
     final hadBaseline = m?.hasBaseline;
     final prevCount = m?.baselineCount;
-    final p = m?.predict(f);
+    final raw = m?.predict(f);
+    // 목표 자세가 있으면 그 기준으로 판정하고, 학습 모델은 자세 이름을 돕는 보조로 쓴다.
+    final j = _judge;
+    final p0 = (j != null && f.channels.length >= SensorLayout.nChannels)
+        ? j.predict(f.channels, raw, f.receivedAt)
+        : raw;
+    // 앞으로 숙이기 판정 삭제 (10/27): 모델만 쓸 때도 숙이기는 정자세로 본다.
+    final p = p0 == PostureClass.leanForward ? PostureClass.straight : p0;
     if (p != null) SittingStats.instance.record(p, f.receivedAt);
     // 판정이 바뀌었거나 기준값 진행도(n/50·완료)가 바뀌었을 때만 다시 그린다.
     final changed = (p != null && p != _posture) ||
@@ -306,20 +335,31 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ));
     final r = result;
-    if (r == null || !mounted) return;
+    if (r == null || !mounted) {
+      debugPrint('[CALIB] 재측정 완료 안 됨(취소·실패) → 기준 #$_baseNo 그대로');
+      return;
+    }
     final base = r.baseline64;
     final m = _model;
     String msg;
-    if (base == null) {
-      msg = '등받이 센서 값이 없어 기준값을 바꾸지 않았어요. 등받이를 연결하고 다시 재주세요';
-    } else if (m == null) {
-      msg = '모델을 불러오는 중이에요. 잠시 후 다시 재주세요';
+    if (!TargetPostureJudge.usable(r.channelMean)) {
+      msg = '앉은 값이 부족해 기준을 바꾸지 않았어요. 앉은 채로 다시 재주세요';
+      debugPrint('[CALIB] 재측정 값 부족 → 기준 #$_baseNo 그대로');
     } else {
-      m.setBaseline(base);
-      m.reset();
+      final j = TargetPostureJudge(r.channelMean, backMean: r.backMean);
+      if (base != null) m?.setBaseline(base);
+      m?.reset();
       _resetBad();
-      setState(() => _posture = null);
-      msg = '정자세 기준을 새로 저장했어요';
+      setState(() {
+        _judge = j;
+        _posture = null;
+        _baseNo++;
+        _baseAt = DateTime.now();
+      });
+      debugPrint('[CALIB] 새 정자세 기준 #$_baseNo 적용 → 이제부터 이 기준으로 판정');
+      msg = j.weakKnee
+          ? '정자세 기준을 저장했어요. 무릎 쪽 값이 약해요 — 매트를 몸 쪽으로 당겨 주세요'
+          : '정자세 기준을 새로 저장했어요';
     }
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
@@ -408,6 +448,13 @@ class _HomeScreenState extends State<HomeScreen> {
       // 임시 (작업 39): 캘리브레이션 화면 연동 전까지 앉은 첫 5초를 기준값으로 쓴다.
       return '기준 자세 측정 중 — 바르게 앉아 주세요 '
           '(${m.baselineCount}/${m.baselineFrames})';
+    }
+    if (_judge?.lastFault ?? false) return '좌석 연결 확인';
+    final lastBack = _lastBackFrame?.receivedAt;
+    if (_ble.statusOf(BleBoard.back) != BoardLinkStatus.off &&
+        (lastBack == null ||
+            DateTime.now().difference(lastBack) > const Duration(seconds: 8))) {
+      return '등받이 연결 확인';
     }
     if (_shown == PostureClass.notSitting) return '착석이 감지되지 않아요';
     return _shown.message;
@@ -509,6 +556,9 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             BmHeader(
+              leading: widget.onBack != null
+                  ? BmBackButton(onTap: widget.onBack)
+                  : null,
               eyebrow: '자세케어',
               title: '실시간 자세',
               trailing: Row(

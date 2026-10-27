@@ -57,9 +57,9 @@ class PostureModel {
 
   /// assets 에서 모델과 정규화 값을 읽는다. 순서·shape 가 맞지 않으면 예외를 던진다.
   ///
-  /// [smoothWindow] 는 다수결 창 크기. 기본 5 = BLE Notify 10Hz 에서 0.5초.
+  /// [smoothWindow] 는 다수결 창 크기. 기본 20 = BLE Notify 10Hz 에서 2초.
   /// (기존 25 는 시리얼 수집 50fps 전제였다. 같은 모델을 두 경로가 쓰므로 창만 주입한다.)
-  static Future<PostureModel> load({int smoothWindow = 5}) async {
+  static Future<PostureModel> load({int smoothWindow = 20}) async {
     final stats =
         jsonDecode(await rootBundle.loadString(statsAsset)) as Map<String, dynamic>;
     final pre = PosturePreprocessor.fromJson(stats);

@@ -34,10 +34,17 @@ enum BleBoard {
   /// BLE 광고 이름.
   final String advName;
 
+  /// true 면 좌석·등받이 역할을 맞바꿔 받는다 (보드를 바꿔 끼우고 SW1 을 안 바꿨을 때).
+  /// 센서 연결 확인 화면의 '좌석↔등받이 바꾸기' 로 켜고 끈다. 앱을 다시 켜도 유지된다.
+  static bool swapRoles = true; // 10/27 보드 교체(SW1 그대로) 기준 기본 켜짐
+
   /// 광고 이름 -> 보드 역할. PoseLab 보드가 아니면 null.
   static BleBoard? fromName(String name) {
     for (final b in values) {
-      if (b.advName == name) return b;
+      if (b.advName == name) {
+        if (!swapRoles) return b;
+        return b == seat ? back : seat;
+      }
     }
     return null;
   }

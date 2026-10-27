@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'screens/calibration_screen.dart';
+import 'screens/sensor_check_screen.dart';
 import 'screens/challenge_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -14,6 +15,7 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await loadBoardSwap();
   // 리포트는 앱을 켤 때마다 빈 상태로 시작한다. 로그인하면 그 사람의 저장된
   // 기록을 불러온다 (ProfileStore.save → SittingStats.switchUser).
   runApp(const PostureCareApp());
@@ -45,7 +47,7 @@ class AppFlow extends StatefulWidget {
   State<AppFlow> createState() => _AppFlowState();
 }
 
-enum _Phase { splash, login, onboarding, calibration, main }
+enum _Phase { splash, login, onboarding, sensorCheck, calibration, main }
 
 class _AppFlowState extends State<AppFlow> {
   /// 앱 전체에서 하나만 쓰는 센서 연결 (좌석 PoseLab-Seat + 등받이 PoseLab-Back).
@@ -53,6 +55,9 @@ class _AppFlowState extends State<AppFlow> {
   /// 화면마다 따로 연결하면 스캔·연결이 서로 끊는 문제가 있어 하나로 합쳤다.
   BleService? _ble;
   _Phase _phase = _Phase.splash;
+
+  /// 처음 정자세 측정(10초) 결과. 실시간 화면의 목표 자세 판정 기준이 된다.
+  CalibrationResult? _calibration;
 
   @override
   void dispose() {
@@ -64,7 +69,7 @@ class _AppFlowState extends State<AppFlow> {
   final List<_Phase> _history = [];
 
   void _go(_Phase next) {
-    if ((next == _Phase.calibration || next == _Phase.main) && _ble == null) {
+    if ((next == _Phase.sensorCheck || next == _Phase.calibration || next == _Phase.main) && _ble == null) {
       _ble = BleService()..connect();
     }
     // 메인에 들어가면 진입 흐름은 끝났으니 되돌아가지 않는다.
@@ -74,6 +79,15 @@ class _AppFlowState extends State<AppFlow> {
       _history.add(_phase);
     }
     setState(() => _phase = next);
+  }
+
+  /// 실시간 화면 → 로그인 화면. 로그인에서 뒤로가면 스플래시로 간다.
+  /// 센서 연결(_ble)은 끊지 않고 그대로 둔다.
+  void _toLogin() {
+    _history
+      ..clear()
+      ..add(_Phase.splash);
+    setState(() => _phase = _Phase.login);
   }
 
   /// 이전 단계로. 더 돌아갈 곳이 없으면(스플래시·메인) 아무것도 하지 않는다.
@@ -107,17 +121,26 @@ class _AppFlowState extends State<AppFlow> {
           onBack: _back,
         ),
       _Phase.onboarding => OnboardingScreen(
-          onStart: () => _go(_Phase.calibration),
+          onStart: () => _go(_Phase.sensorCheck),
           onBack: _back,
+        ),
+      _Phase.sensorCheck => SensorCheckScreen(
+          ble: _ble!,
+          onNext: () => _go(_Phase.calibration),
+          onBack: _back,
+          onSkip: () => _go(_Phase.main),
         ),
       _Phase.calibration => CalibrationScreen(
           ble: _ble!,
-          onDone: (_) => _go(_Phase.main),
+          onDone: (r) {
+            _calibration = r;
+            _go(_Phase.main);
+          },
           onBack: _back,
           // 센서 없이도 스트레칭(ML Kit)·리포트 등을 볼 수 있게 측정을 건너뛴다.
           onSkip: () => _go(_Phase.main),
         ),
-      _Phase.main => RootNav(ble: _ble),
+      _Phase.main => RootNav(ble: _ble, onBack: _toLogin, calibration: _calibration),
     };
   }
 }
@@ -125,7 +148,13 @@ class _AppFlowState extends State<AppFlow> {
 /// 하단 탭 — 피그마 TabBar 컴포넌트와 동일하게 4개.
 /// 실시간 / 리포트 / 챌린지 / 스트레칭
 class RootNav extends StatefulWidget {
-  const RootNav({super.key, this.ble});
+  const RootNav({super.key, this.ble, this.onBack, this.calibration});
+
+  /// 처음 정자세 측정 결과 (건너뛰었으면 null → 학습 모델로만 판정).
+  final CalibrationResult? calibration;
+
+  /// 실시간 화면 헤더의 뒤로가기 (로그인 화면으로).
+  final VoidCallback? onBack;
 
   /// 앱이 들고 있는 센서 연결. 없으면(테스트 등) 실시간 화면이 직접 만든다.
   final BleService? ble;
@@ -139,7 +168,8 @@ class _RootNavState extends State<RootNav> {
   int _index = 0;
 
   late final List<Widget> _pages = [
-    HomeScreen(api: _api, ble: widget.ble),
+    HomeScreen(
+        api: _api, ble: widget.ble, onBack: widget.onBack, calibration: widget.calibration),
     ReportScreen(onBack: _toHome),
     ChallengeScreen(onBack: _toHome),
     StretchScreen(onBack: _toHome),
