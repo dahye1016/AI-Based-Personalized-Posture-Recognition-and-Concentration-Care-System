@@ -167,19 +167,32 @@ class _RootNavState extends State<RootNav> {
   final ApiService _api = ApiService();
   int _index = 0;
 
+  /// 실시간 탭이 보이는지. 다른 탭에 있을 때 알림 화면이 끼어들지 않게 HomeScreen 에 넘긴다.
+  final ValueNotifier<bool> _homeVisible = ValueNotifier<bool>(true);
+
+  void _setIndex(int i) {
+    _index = i;
+    _homeVisible.value = i == 0;
+  }
+
   late final List<Widget> _pages = [
     HomeScreen(
-        api: _api, ble: widget.ble, onBack: widget.onBack, calibration: widget.calibration),
+        api: _api,
+        ble: widget.ble,
+        onBack: widget.onBack,
+        calibration: widget.calibration,
+        visible: _homeVisible),
     ReportScreen(onBack: _toHome),
     ChallengeScreen(onBack: _toHome),
     StretchScreen(onBack: _toHome),
   ];
 
   /// 다른 탭에서 뒤로가기 = 실시간 탭으로.
-  void _toHome() => setState(() => _index = 0);
+  void _toHome() => setState(() => _setIndex(0));
 
   @override
   void dispose() {
+    _homeVisible.dispose();
     _api.dispose();
     super.dispose();
   }
@@ -197,7 +210,7 @@ class _RootNavState extends State<RootNav> {
       body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: (i) => setState(() => _setIndex(i)),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.circle_outlined),

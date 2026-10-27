@@ -136,7 +136,9 @@ class _DailyBody extends StatelessWidget {
       ),
     );
 
-    if (!day.hasData) {
+    // postures 는 지금 자세 목록에 있는 것만 남긴다. 예전 기록(거북목)만 있는 날은
+    // hasData 여도 비어 있어서 아래 postures.first 가 터지므로 빈 카드로 보낸다.
+    if (!day.hasData || day.postures.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

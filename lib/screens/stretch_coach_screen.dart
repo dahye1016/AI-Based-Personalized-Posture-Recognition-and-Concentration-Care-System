@@ -47,6 +47,9 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
   /// '건너뛰기'로 넘긴 동작 수. 완료 동작 수 = 전체 - 이 값.
   int _skipped = 0;
 
+  /// 완료 처리를 이미 했는지. '루틴 끝내기'를 빠르게 두 번 눌러도 한 번만 기록한다.
+  bool _finished = false;
+
   @override
   void initState() {
     super.initState();
@@ -119,16 +122,21 @@ class _StretchCoachScreenState extends State<StretchCoachScreen> {
 
   /// 마지막 동작까지 끝났다. 완료 화면(11-D)으로 교체한다.
   void _finish() {
+    if (_finished) return;
+    _finished = true;
     SittingStats.instance.recordStretch();
     final total = widget.routine.moves.length;
+    final elapsed = DateTime.now().difference(_startedAt);
+    // builder 안에서 기록하면 다시 빌드될 때 두 번 셀 수 있어 밖에서 한 번만 센다.
+    final todayCount = StretchLog.instance.record();
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => StretchDoneScreen(
           routine: widget.routine,
-          elapsed: DateTime.now().difference(_startedAt),
+          elapsed: elapsed,
           completed: total - _skipped,
           total: total,
-          todayCount: StretchLog.instance.record(),
+          todayCount: todayCount,
         ),
       ),
     );

@@ -82,9 +82,11 @@ void main() {
     });
 
     test('좌석 합이 기준 미만(빈 의자)인 프레임은 세지 않는다', () {
+      // seatMin 은 8a549bf(아로)에서 6000 -> 1500. 근거: posture_preprocessor.dart
+      // 주석 "매트 압력이 낮아 팀 기준(gen_dummy_spec.py SEAT_MIN 6000)에서 낮춤".
       final c = BaselineCollector(frames: 2);
       expect(c.add(seated(0)), isNull);
-      expect(c.add(seated(100)), isNull); // 32*100 = 3200 < 6000
+      expect(c.add(seated(40)), isNull); // 32*40 = 1280 < 1500
       expect(c.count, 0);
       c.add(seated(200));
       expect(c.add(seated(200)), isNotNull);

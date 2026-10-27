@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/posture.dart';
@@ -25,8 +25,17 @@ import 'stretch_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen(
-      {super.key, required this.api, this.ble, this.onBack, this.calibration});
+      {super.key,
+      required this.api,
+      this.ble,
+      this.onBack,
+      this.calibration,
+      this.visible});
   final ApiService api;
+
+  /// 이 화면(실시간 탭)이 지금 보이는지. false 면 알림 화면을 띄우지 않는다 (기록은 남긴다).
+  /// null 이면 항상 보이는 것으로 본다.
+  final ValueListenable<bool>? visible;
 
   /// 처음 정자세 측정 결과. 있으면 이 자세를 목표로 판정한다 ([TargetPostureJudge]).
   final CalibrationResult? calibration;
@@ -298,6 +307,13 @@ class _HomeScreenState extends State<HomeScreen> {
     SittingStats.instance.recordAlert();
 
     if (!mounted || _alertOpen) return;
+    // 다른 탭이 보이거나 위에 다른 화면(재측정·스트레칭 등)이 떠 있으면 끼어들지 않는다.
+    final onScreen = (widget.visible?.value ?? true) &&
+        (ModalRoute.of(context)?.isCurrent ?? true);
+    if (!onScreen) {
+      debugPrint('[ALERT] 화면이 가려져 있어 알림 화면 생략 (기록은 저장됨): ${p.label}');
+      return;
+    }
     _alertOpen = true;
     Navigator.of(context)
         .push(MaterialPageRoute(
@@ -453,7 +469,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final lastBack = _lastBackFrame?.receivedAt;
     if (_ble.statusOf(BleBoard.back) != BoardLinkStatus.off &&
         (lastBack == null ||
-            DateTime.now().difference(lastBack) > const Duration(seconds: 8))) {
+            DateTime.now().difference(lastBack) > const Duration(seconds: 3))) {
       return '등받이 연결 확인';
     }
     if (_shown == PostureClass.notSitting) return '착석이 감지되지 않아요';

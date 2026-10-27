@@ -50,6 +50,13 @@ class _PoseCameraState extends State<PoseCamera> with WidgetsBindingObserver {
   InputImageRotation _rotation = InputImageRotation.rotation0deg;
   String? _error;
 
+  /// 카메라를 여는 중인지. 비활성↔복귀가 빠르게 반복될 때 두 번 열지 않게 한다.
+  bool _starting = false;
+
+  /// 여는 도중에 앱이 비활성·백그라운드로 가서 닫혔는지. 이때 난 오류는 화면에 띄우지 않고
+  /// 복귀(resumed) 때 다시 연다.
+  bool _interrupted = false;
+
   @override
   void initState() {
     super.initState();
@@ -58,10 +65,12 @@ class _PoseCameraState extends State<PoseCamera> with WidgetsBindingObserver {
   }
 
   Future<void> _start() async {
+    if (_starting) return;
+    _starting = true;
     try {
       final cams = await availableCameras();
       if (cams.isEmpty) {
-        setState(() => _error = '카메라를 찾을 수 없어요');
+        if (mounted) setState(() => _error = '카메라를 찾을 수 없어요');
         return;
       }
       _camera = cams.firstWhere(
@@ -77,15 +86,17 @@ class _PoseCameraState extends State<PoseCamera> with WidgetsBindingObserver {
             : ImageFormatGroup.nv21,
       );
       await c.initialize();
-      if (!mounted) {
+      // 여는 사이 앱이 비활성·백그라운드로 갔으면 이 컨트롤러는 버리고 복귀 때 새로 연다.
+      if (!mounted || _interrupted) {
         await c.dispose();
         return;
       }
       _controller = c;
       await c.startImageStream(_onImage);
-      setState(() {});
+      if (mounted) setState(() {});
     } on CameraException catch (e) {
       debugPrint('[PoseCamera] 카메라 오류: ${e.code} ${e.description}');
+      if (_interrupted) return;
       if (mounted) {
         setState(() => _error = e.code == 'CameraAccessDenied'
             ? '카메라 권한이 필요해요\n설정 → PostureCare → 카메라를 켜주세요'
@@ -93,7 +104,19 @@ class _PoseCameraState extends State<PoseCamera> with WidgetsBindingObserver {
       }
     } catch (e) {
       debugPrint('[PoseCamera] 시작 실패: $e');
+      if (_interrupted) return;
       if (mounted) setState(() => _error = '카메라를 열 수 없어요');
+    } finally {
+      _starting = false;
+      final retry = _interrupted;
+      _interrupted = false;
+      // 여는 중에 이미 복귀(resumed)가 지나갔으면 그때 못 연 걸 지금 연다.
+      if (retry &&
+          mounted &&
+          _controller == null &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        _start();
+      }
     }
   }
 
@@ -159,13 +182,20 @@ class _PoseCameraState extends State<PoseCamera> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final c = _controller;
-    if (c == null || !c.value.isInitialized) return;
     if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
         state == AppLifecycleState.paused) {
+      if (_starting) _interrupted = true;
+      final c = _controller;
+      if (c == null) return;
       _controller = null;
+      if (mounted) setState(() {});
+      c.stopImageStream().catchError((_) {});
       c.dispose();
     } else if (state == AppLifecycleState.resumed) {
+      // 닫혀 있으면 다시 연다. 여는 중이면 _start 의 finally 가 이어서 처리한다.
+      if (_controller != null || _starting) return;
+      if (mounted && _error != null) setState(() => _error = null);
       _start();
     }
   }
